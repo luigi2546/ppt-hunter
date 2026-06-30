@@ -1,9 +1,11 @@
 from datetime import datetime
+from html.parser import HTMLParser
 from pathlib import Path
-from re import sub
-from urllib.parse import unquote, urlparse
+from re import findall, sub
+from urllib.parse import unquote, urljoin, urlparse
 from zipfile import ZIP_STORED, ZipFile
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from sqlalchemy import desc, or_, select
@@ -100,49 +102,60 @@ def create_manual_links(payload: ManualLinksCreate, db: Session = Depends(get_db
     skipped = 0
     invalid: list[str] = []
     documents_to_queue: list[str] = []
-    seen_urls: set[str] = set()
+    seen_inputs: set[str] = set()
+    seen_candidates: set[str] = set()
 
     for raw_url in payload.urls:
         url = raw_url.strip()
-        if not url or url in seen_urls:
+        if not url or url in seen_inputs:
             continue
-        seen_urls.add(url)
+        seen_inputs.add(url)
 
         parsed = urlparse(url)
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
             invalid.append(url)
             continue
 
-        file_type = detect_file_type(url)
-        if file_type not in {"ppt", "pptx"}:
+        candidate_urls = discover_presentation_urls(url)
+        if not candidate_urls:
             invalid.append(url)
             continue
 
-        canonical_url = canonicalize_url(url)
-        existing = db.scalar(select(Document).where(Document.canonical_url == canonical_url))
-        if existing:
-            existing_count += 1
-            if existing.status in {"discovered", "download_failed"}:
-                existing.status = "download_queued"
-                documents_to_queue.append(existing.id)
-                queued += 1
-            else:
-                skipped += 1
-            continue
+        for candidate_url in candidate_urls:
+            canonical_url = canonicalize_url(candidate_url)
+            if canonical_url in seen_candidates:
+                continue
+            seen_candidates.add(canonical_url)
 
-        document = Document(
-            title=title_from_url(url),
-            source_url=url,
-            canonical_url=canonical_url,
-            provider="manual",
-            file_type=file_type,
-            status="download_queued",
-        )
-        db.add(document)
-        db.flush()
-        documents_to_queue.append(document.id)
-        created += 1
-        queued += 1
+            file_type = detect_file_type(candidate_url)
+            if file_type not in {"ppt", "pptx"}:
+                invalid.append(candidate_url)
+                continue
+
+            existing = db.scalar(select(Document).where(Document.canonical_url == canonical_url))
+            if existing:
+                existing_count += 1
+                if existing.status in {"discovered", "download_failed"}:
+                    existing.status = "download_queued"
+                    documents_to_queue.append(existing.id)
+                    queued += 1
+                else:
+                    skipped += 1
+                continue
+
+            document = Document(
+                title=title_from_url(candidate_url),
+                source_url=candidate_url,
+                canonical_url=canonical_url,
+                provider="manual",
+                file_type=file_type,
+                status="download_queued",
+            )
+            db.add(document)
+            db.flush()
+            documents_to_queue.append(document.id)
+            created += 1
+            queued += 1
 
     db.commit()
 
@@ -252,6 +265,60 @@ def export_downloaded_documents(
         media_type="application/zip",
         filename=export_path.name,
     )
+
+
+class PresentationLinkParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.links: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        for name, value in attrs:
+            if name.lower() in {"href", "src"} and value:
+                self.links.append(value)
+
+
+def discover_presentation_urls(url: str) -> list[str]:
+    if detect_file_type(url) in {"ppt", "pptx"}:
+        return [url]
+
+    try:
+        response = httpx.get(
+            url,
+            follow_redirects=True,
+            timeout=20,
+            headers={"User-Agent": "ppt-hunter/0.1"},
+        )
+        response.raise_for_status()
+    except Exception:
+        return []
+
+    page_text = response.text[:2_000_000]
+    parser = PresentationLinkParser()
+    try:
+        parser.feed(page_text)
+    except Exception:
+        pass
+
+    text_links = findall(r"""(?:https?://|/|\.{1,2}/)?[^\s"'<>]+?\.pptx?(?:\?[^\s"'<>]*)?""", page_text)
+    base_url = str(response.url)
+    candidates = [*parser.links, *text_links]
+    discovered: list[str] = []
+    seen: set[str] = set()
+
+    for candidate in candidates:
+        absolute_url = urljoin(base_url, candidate.strip().rstrip(").,;]}'\""))
+        if detect_file_type(absolute_url) not in {"ppt", "pptx"}:
+            continue
+        canonical_url = canonicalize_url(absolute_url)
+        if canonical_url in seen:
+            continue
+        seen.add(canonical_url)
+        discovered.append(absolute_url)
+        if len(discovered) >= 500:
+            break
+
+    return discovered
 
 
 def safe_archive_name(title: str, document_id: str, file_type: str, used_names: set[str]) -> str:

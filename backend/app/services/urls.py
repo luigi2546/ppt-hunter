@@ -1,4 +1,4 @@
-from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+from urllib.parse import parse_qsl, unquote, urlencode, urlparse, urlunparse
 
 
 def canonicalize_url(url: str) -> str:
@@ -18,10 +18,10 @@ def canonicalize_url(url: str) -> str:
 
 
 def detect_file_type(url: str) -> str:
-    path = urlparse(url.lower()).path
-    if path.endswith(".pptx"):
+    parsed = urlparse(unquote(url.lower()))
+    searchable = f"{parsed.path}?{parsed.query}"
+    if ".pptx" in searchable:
         return "pptx"
-    if path.endswith(".ppt"):
+    if ".ppt" in searchable:
         return "ppt"
     return "unknown"
-
