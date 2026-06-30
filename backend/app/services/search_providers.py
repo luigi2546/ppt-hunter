@@ -159,12 +159,17 @@ class InternetArchiveProvider:
     name = "internet_archive"
 
     def search(self, query: str, limit: int) -> list[SearchResult]:
+        results, _, _ = self.search_from_page(query, limit, start_page=1)
+        return results
+
+    def search_from_page(self, query: str, limit: int, start_page: int = 1, max_pages: int = 100) -> tuple[list[SearchResult], int, bool]:
         results: list[SearchResult] = []
         rows = 100
         search_query = f'({query}) AND (format:"Microsoft PowerPoint" OR format:"Microsoft Powerpoint" OR format:"PowerPoint")'
+        next_page = max(start_page, 1)
 
         with httpx.Client(timeout=30) as client:
-            for page in range(1, 11):
+            for page in range(next_page, next_page + max_pages):
                 response = client.get(
                     "https://archive.org/advancedsearch.php",
                     params={
@@ -178,7 +183,7 @@ class InternetArchiveProvider:
                 response.raise_for_status()
                 docs = response.json().get("response", {}).get("docs", [])
                 if not docs:
-                    break
+                    return results, page, True
 
                 for item in docs:
                     identifier = item.get("identifier")
@@ -207,9 +212,10 @@ class InternetArchiveProvider:
                             )
                         )
                         if len(results) >= limit:
-                            return results
+                            return results, page + 1, False
+                next_page = page + 1
 
-        return results
+        return results, next_page, False
 
 
 class AggregateSearchProvider:

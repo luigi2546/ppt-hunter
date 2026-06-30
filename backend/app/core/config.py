@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     public_archive_title: str = "Research Document Archive"
     public_archive_base_url: str | None = None
     public_archive_target_files: int = 200000
+    archive_collection_batch_size: int = 500
+    archive_collection_target_files: int = 200000
+    archive_collection_wait_seconds: int = 60
+    archive_collection_max_empty_batches: int = 5
 
     brave_search_api_key: str | None = None
     dataforseo_login: str | None = None
