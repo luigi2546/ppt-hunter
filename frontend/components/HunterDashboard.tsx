@@ -158,7 +158,7 @@ export function HunterDashboard() {
             </div>
             <div>
               <h1 className="text-2xl font-semibold tracking-normal">PPT Hunter</h1>
-              <p className="text-sm text-neutral-400">Link-based deck collection and dedupe.</p>
+              <p className="text-sm text-neutral-400">Scan pasted links for PPT/PPTX files and dedupe downloads.</p>
             </div>
           </div>
           <div className="grid grid-cols-3 gap-3 text-sm">
@@ -173,13 +173,13 @@ export function HunterDashboard() {
         <aside className="space-y-4">
           <form onSubmit={submitLinks} className="rounded border border-neutral-800 bg-neutral-900 p-4">
             <label className="text-sm font-medium text-neutral-300" htmlFor="links">
-              PPT/PPTX links
+              Pages or PPT/PPTX links
             </label>
             <textarea
               id="links"
               value={linksText}
               onChange={(event) => setLinksText(event.target.value)}
-              placeholder="https://example.com/deck.pptx"
+              placeholder={"https://example.com/resources\nhttps://example.com/deck.pptx"}
               className="mt-2 min-h-44 w-full resize-none rounded border border-neutral-700 bg-neutral-950 p-3 text-sm outline-none ring-emerald-500 focus:ring-2"
             />
             <button
@@ -187,14 +187,14 @@ export function HunterDashboard() {
               disabled={loading}
             >
               {loading ? <Loader2 className="animate-spin" size={18} /> : <LinkIcon size={18} />}
-              Add links + download
+              Scan links + download
             </button>
             {message ? <p className="mt-3 text-sm text-neutral-400">{message}</p> : null}
           </form>
 
           <section className="rounded border border-neutral-800 bg-neutral-900 p-4">
             <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-neutral-200">Link queue</h2>
+              <h2 className="text-sm font-semibold text-neutral-200">Scanned files</h2>
               <button onClick={refresh} className="rounded p-2 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100" title="Refresh">
                 <RefreshCw size={16} />
               </button>
@@ -214,7 +214,7 @@ export function HunterDashboard() {
                   <p className="mt-1 text-xs text-neutral-500">{document.provider}</p>
                 </button>
               ))}
-              {documents.length === 0 ? <p className="text-sm text-neutral-500">No links added yet.</p> : null}
+              {documents.length === 0 ? <p className="text-sm text-neutral-500">No files found yet.</p> : null}
             </div>
           </section>
         </aside>
@@ -223,7 +223,7 @@ export function HunterDashboard() {
           <div className="flex flex-col gap-4 border-b border-neutral-800 p-4 md:flex-row md:items-center md:justify-between">
             <div>
               <h2 className="text-base font-semibold">Document queue</h2>
-              <p className="text-sm text-neutral-500">Added links move through download, extraction, and enrichment.</p>
+              <p className="text-sm text-neutral-500">Found files move through download, extraction, and enrichment.</p>
             </div>
             <div className="flex items-center gap-3">
               <button
@@ -277,7 +277,7 @@ export function HunterDashboard() {
                 </div>
               </article>
             ))}
-            {documents.length === 0 ? <p className="p-6 text-sm text-neutral-500">No links added yet.</p> : null}
+            {documents.length === 0 ? <p className="p-6 text-sm text-neutral-500">No PPT or PPTX files found yet.</p> : null}
           </div>
         </section>
       </div>
