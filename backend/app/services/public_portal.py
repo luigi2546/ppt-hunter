@@ -36,6 +36,8 @@ def build_manifest(
     csv_key: str,
     json_key: str,
     download_url_for: Callable[[Document], str] | None = None,
+    zip_url_for_day: Callable[[str], str] | None = None,
+    all_zip_url: str | None = None,
 ) -> dict[str, object]:
     files_by_day: dict[str, list[dict[str, object]]] = defaultdict(list)
     total_size = 0
@@ -77,6 +79,7 @@ def build_manifest(
                 "size": sum(int(file.get("size") or 0) for file in files),
                 "ppt_count": sum(1 for file in files if file.get("file_type") == "ppt"),
                 "pptx_count": sum(1 for file in files if file.get("file_type") == "pptx"),
+                "zip_url": zip_url_for_day(day) if zip_url_for_day else None,
                 "files": files,
             }
         )
@@ -87,6 +90,7 @@ def build_manifest(
         "target_files": settings.public_archive_target_files,
         "total_files": sum(int(day["file_count"]) for day in days),
         "total_size": total_size,
+        "zip_url": all_zip_url,
         "base_url": settings.public_archive_base_url.rstrip("/") if settings.public_archive_base_url else "",
         "metadata": {
             "csv_key": csv_key,

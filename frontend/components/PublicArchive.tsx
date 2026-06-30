@@ -24,6 +24,7 @@ type ArchiveDay = {
   size: number;
   ppt_count: number;
   pptx_count: number;
+  zip_url: string | null;
   files: ArchiveFile[];
 };
 
@@ -33,6 +34,7 @@ type ArchiveManifest = {
   target_files: number;
   total_files: number;
   total_size: number;
+  zip_url: string | null;
   metadata: {
     csv_url: string;
     json_url: string;
@@ -81,6 +83,13 @@ export function PublicArchive() {
               <p className="mt-2 text-sm text-white/80">PowerPoint files collected, deduplicated, and indexed for download.</p>
             </div>
             <div className="flex flex-wrap gap-2">
+              <a
+                className="inline-flex h-10 items-center gap-2 rounded bg-white px-3 text-sm font-semibold text-emerald-900 hover:bg-emerald-50"
+                href={resolveUrl(manifest?.zip_url ?? "/api/exports/documents.zip?limit=5000")}
+              >
+                <Download size={16} />
+                Download All ZIP
+              </a>
               <a
                 className="inline-flex h-10 items-center gap-2 rounded border border-white/25 bg-white/15 px-3 text-sm font-semibold text-white hover:bg-white/20"
                 href={resolveUrl(manifest?.metadata.csv_url ?? "/api/exports/metadata")}
@@ -134,9 +143,18 @@ export function PublicArchive() {
                     {formatNumber(day.ppt_count)} PPT
                   </p>
                 </div>
-                <span className="w-fit rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-800">
-                  {formatNumber(day.file_count)} collected
-                </span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="w-fit rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-800">
+                    {formatNumber(day.file_count)} collected
+                  </span>
+                  <a
+                    className="inline-flex h-9 items-center gap-2 rounded bg-slate-900 px-3 text-xs font-semibold text-white hover:bg-slate-700"
+                    href={resolveUrl(day.zip_url ?? `/api/exports/documents.zip?day=${day.day}&limit=5000`)}
+                  >
+                    <Download size={15} />
+                    Download ZIP
+                  </a>
+                </div>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[760px] border-collapse text-left text-sm">

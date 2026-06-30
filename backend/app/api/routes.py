@@ -1,6 +1,6 @@
 import csv
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from html.parser import HTMLParser
 from pathlib import Path
 from re import findall, sub
@@ -82,6 +82,8 @@ def portal_manifest(db: Session = Depends(get_db)) -> dict[str, object]:
         "/api/exports/metadata.csv",
         "/api/exports/metadata.json",
         download_url_for=lambda document: f"/api/documents/{document.id}/file",
+        zip_url_for_day=lambda day: f"/api/exports/documents.zip?day={day}&limit=5000",
+        all_zip_url="/api/exports/documents.zip?limit=5000",
     )
 
 
@@ -296,7 +298,8 @@ def queue_all_downloads(payload: BulkDownloadCreate, db: Session = Depends(get_d
 def export_downloaded_documents(
     db: Session = Depends(get_db),
     provider: str | None = None,
-    limit: int = Query(default=500, ge=1, le=500),
+    day: str | None = None,
+    limit: int = Query(default=500, ge=1, le=5000),
 ) -> FileResponse:
     stmt = (
         select(Document)
@@ -306,29 +309,14 @@ def export_downloaded_documents(
     )
     if provider:
         stmt = stmt.where(Document.provider == provider)
+    if day:
+        try:
+            day_start = datetime.strptime(day, "%Y-%m-%d")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="day must use YYYY-MM-DD format") from exc
+        stmt = stmt.where(Document.updated_at >= day_start, Document.updated_at < day_start + timedelta(days=1))
 
-    documents = []
-    local_paths: dict[str, Path] = {}
-    for document in db.scalars(stmt):
-        local_path = ensure_local_file(document.id, document.file_type, document.file_path, document.storage_key)
-        if local_path:
-            documents.append(document)
-            local_paths[document.id] = local_path
-    if not documents:
-        raise HTTPException(status_code=404, detail="No downloaded files are available to export")
-
-    export_dir = settings.storage_dir / "exports"
-    export_dir.mkdir(parents=True, exist_ok=True)
-    export_path = export_dir / f"ppt-hunter-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}.zip"
-
-    used_names: set[str] = set()
-    with ZipFile(export_path, "w", compression=ZIP_STORED) as archive:
-        for document in documents:
-            source = local_paths[document.id]
-            archive_name = safe_archive_name(document.title, document.id, document.file_type, used_names)
-            archive.write(source, archive_name)
-
-    upload_export_file(export_path)
+    export_path = build_documents_zip(list(db.scalars(stmt)), day)
 
     return FileResponse(
         export_path,
@@ -401,6 +389,33 @@ def write_metadata_export(documents: list[Document]) -> tuple[str, str]:
         upload_file(json_path, json_key, "application/json")
 
     return csv_key, json_key
+
+
+def build_documents_zip(documents: list[Document], day: str | None = None) -> Path:
+    selected_documents = []
+    local_paths: dict[str, Path] = {}
+    for document in documents:
+        local_path = ensure_local_file(document.id, document.file_type, document.file_path, document.storage_key)
+        if local_path:
+            selected_documents.append(document)
+            local_paths[document.id] = local_path
+    if not selected_documents:
+        raise HTTPException(status_code=404, detail="No downloaded files are available to export")
+
+    export_dir = settings.storage_dir / "exports"
+    export_dir.mkdir(parents=True, exist_ok=True)
+    suffix = day or "all"
+    export_path = export_dir / f"ppt-hunter-{suffix}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}.zip"
+
+    used_names: set[str] = set()
+    with ZipFile(export_path, "w", compression=ZIP_STORED) as archive:
+        for document in selected_documents:
+            source = local_paths[document.id]
+            archive_name = safe_archive_name(document.title, document.id, document.file_type, used_names)
+            archive.write(source, archive_name)
+
+    upload_export_file(export_path)
+    return export_path
 
 
 class PresentationLinkParser(HTMLParser):
