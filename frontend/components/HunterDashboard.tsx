@@ -24,6 +24,7 @@ type ManualLinksResult = {
   queued: number;
   skipped: number;
   invalid: string[];
+  discovery_runs: number;
 };
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
@@ -322,6 +323,7 @@ function formatManualLinksMessage(result: ManualLinksResult) {
     `${result.existing} duplicates`,
     `${result.skipped} already active`,
   ];
+  if (result.discovery_runs > 0) parts.unshift(`${result.discovery_runs} background scan${result.discovery_runs > 1 ? "s" : ""} started`);
   if (result.invalid.length > 0) parts.push(`${result.invalid.length} invalid`);
   return parts.join(" - ");
 }

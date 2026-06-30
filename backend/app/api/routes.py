@@ -100,6 +100,7 @@ def create_manual_links(payload: ManualLinksCreate, db: Session = Depends(get_db
     existing_count = 0
     queued = 0
     skipped = 0
+    discovery_runs = 0
     invalid: list[str] = []
     documents_to_queue: list[str] = []
     seen_inputs: set[str] = set()
@@ -114,6 +115,14 @@ def create_manual_links(payload: ManualLinksCreate, db: Session = Depends(get_db
         parsed = urlparse(url)
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
             invalid.append(url)
+            continue
+
+        if is_broad_archive_url(url):
+            run = SearchRun(query="presentation", provider="internet_archive", status="queued")
+            db.add(run)
+            db.flush()
+            discover_presentations.delay(run.id, run.query, run.provider, 500, True)
+            discovery_runs += 1
             continue
 
         candidate_urls = discover_presentation_urls(url)
@@ -168,6 +177,7 @@ def create_manual_links(payload: ManualLinksCreate, db: Session = Depends(get_db
         queued=queued,
         skipped=skipped,
         invalid=invalid,
+        discovery_runs=discovery_runs,
     )
 
 
@@ -326,6 +336,14 @@ def discover_presentation_urls(url: str) -> list[str]:
 
 def is_archive_url(url: str) -> bool:
     return urlparse(url).netloc.lower().removeprefix("www.") == "archive.org"
+
+
+def is_broad_archive_url(url: str) -> bool:
+    parsed = urlparse(url)
+    if parsed.netloc.lower().removeprefix("www.") != "archive.org":
+        return False
+    path = parsed.path.strip("/")
+    return path == "" or path in {"details", "download"}
 
 
 def discover_archive_presentation_urls(url: str, limit: int = 500) -> list[str]:

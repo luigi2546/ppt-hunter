@@ -64,6 +64,7 @@ class ManualLinksRead(BaseModel):
     queued: int
     skipped: int
     invalid: list[str]
+    discovery_runs: int = 0
 
 
 class BulkDownloadCreate(BaseModel):
