@@ -17,3 +17,5 @@ storage/*.db
 *.sqlite
 *.sqlite3
 *.zip
+*.log
+storage-local/

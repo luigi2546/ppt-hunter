@@ -2,7 +2,7 @@ from datetime import datetime
 from html.parser import HTMLParser
 from pathlib import Path
 from re import findall, sub
-from urllib.parse import unquote, urljoin, urlparse
+from urllib.parse import quote, unquote, urljoin, urlparse
 from zipfile import ZIP_STORED, ZipFile
 
 import httpx
@@ -106,7 +106,7 @@ def create_manual_links(payload: ManualLinksCreate, db: Session = Depends(get_db
     seen_candidates: set[str] = set()
 
     for raw_url in payload.urls:
-        url = raw_url.strip()
+        url = normalize_input_url(raw_url)
         if not url or url in seen_inputs:
             continue
         seen_inputs.add(url)
@@ -282,6 +282,9 @@ def discover_presentation_urls(url: str) -> list[str]:
     if detect_file_type(url) in {"ppt", "pptx"}:
         return [url]
 
+    if is_archive_url(url):
+        return discover_archive_presentation_urls(url)
+
     try:
         response = httpx.get(
             url,
@@ -319,6 +322,93 @@ def discover_presentation_urls(url: str) -> list[str]:
             break
 
     return discovered
+
+
+def is_archive_url(url: str) -> bool:
+    return urlparse(url).netloc.lower().removeprefix("www.") == "archive.org"
+
+
+def discover_archive_presentation_urls(url: str, limit: int = 500) -> list[str]:
+    parsed = urlparse(url)
+    path_parts = [part for part in parsed.path.split("/") if part]
+
+    if len(path_parts) >= 2 and path_parts[0] in {"details", "download"}:
+        return archive_file_urls_for_identifier(path_parts[1], limit)
+
+    discovered: list[str] = []
+    seen: set[str] = set()
+    query = '(format:"Microsoft PowerPoint" OR format:"Microsoft Powerpoint" OR format:"PowerPoint")'
+
+    with httpx.Client(timeout=30, follow_redirects=True) as client:
+        for page in range(1, 11):
+            response = client.get(
+                "https://archive.org/advancedsearch.php",
+                params={
+                    "q": query,
+                    "fl[]": ["identifier"],
+                    "rows": 50,
+                    "page": page,
+                    "output": "json",
+                },
+            )
+            response.raise_for_status()
+            docs = response.json().get("response", {}).get("docs", [])
+            if not docs:
+                break
+
+            for item in docs:
+                identifier = item.get("identifier")
+                if not identifier:
+                    continue
+                for file_url in archive_file_urls_for_identifier(identifier, limit - len(discovered), client):
+                    canonical_url = canonicalize_url(file_url)
+                    if canonical_url in seen:
+                        continue
+                    seen.add(canonical_url)
+                    discovered.append(file_url)
+                    if len(discovered) >= limit:
+                        return discovered
+
+    return discovered
+
+
+def archive_file_urls_for_identifier(identifier: str, limit: int, client: httpx.Client | None = None) -> list[str]:
+    if limit <= 0:
+        return []
+
+    own_client = client is None
+    http_client = client or httpx.Client(timeout=30, follow_redirects=True)
+    try:
+        response = http_client.get(f"https://archive.org/metadata/{quote(identifier)}")
+        response.raise_for_status()
+        files = response.json().get("files", [])
+    except Exception:
+        return []
+    finally:
+        if own_client:
+            http_client.close()
+
+    urls: list[str] = []
+    for file_info in files:
+        file_name = file_info.get("name")
+        if not file_name or detect_file_type(file_name) not in {"ppt", "pptx"}:
+            continue
+        urls.append(f"https://archive.org/download/{quote(identifier)}/{quote(file_name)}")
+        if len(urls) >= limit:
+            break
+    return urls
+
+
+def normalize_input_url(raw_url: str) -> str:
+    url = raw_url.strip().strip("<>()[]{}'\"")
+    if not url:
+        return ""
+    parsed = urlparse(url)
+    if parsed.scheme:
+        return url
+    if "." in parsed.path:
+        return f"https://{url}"
+    return url
 
 
 def safe_archive_name(title: str, document_id: str, file_type: str, used_names: set[str]) -> str:

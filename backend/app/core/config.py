@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./ppt_hunter.db"
     redis_url: str = "redis://localhost:6379/0"
     elasticsearch_url: str = "http://localhost:9200"
+    celery_task_always_eager: bool = False
     storage_dir: Path = Path("./storage")
     storage_backend: str = "local"
     supabase_url: str | None = None
