@@ -11,6 +11,7 @@ from app.services.downloader import download_to_storage
 from app.services.enrichment import categorize, summarize
 from app.services.extractor import count_pptx_images, extract_document_text
 from app.services.indexer import index_document
+from app.services.link_crawler import crawl_page, title_from_url
 from app.services.search_providers import get_provider
 from app.services.storage import ensure_local_file, upload_downloaded_file
 from app.services.urls import canonicalize_url
@@ -204,6 +205,109 @@ def collect_archive_batches(run_id: str, query: str = "presentation", start_page
             db.commit()
 
 
+@celery_app.task(name="crawl_link_source")
+def crawl_link_source(run_id: str, seed_url: str) -> None:
+    max_pages = max(settings.link_crawl_max_pages, 1)
+    max_files = max(settings.link_crawl_max_files, 1)
+    max_depth = max(settings.link_crawl_max_depth, 0)
+    root_host = urlparse_host(seed_url)
+
+    if not root_host:
+        return
+
+    with SessionLocal() as db:
+        run = db.get(SearchRun, run_id)
+        if not run:
+            return
+
+        run.status = "running"
+        run.provider = "link_crawl"
+        db.commit()
+
+        pending: list[tuple[str, int]] = [(seed_url, 0)]
+        seen_pages: set[str] = set()
+        seen_files: set[str] = set()
+        pages_checked = 0
+        created = 0
+        skipped = 0
+        queued_document_ids: list[str] = []
+
+        try:
+            while pending and pages_checked < max_pages and created < max_files:
+                page_url, depth = pending.pop(0)
+                page_canonical = canonicalize_url(page_url)
+                if page_canonical in seen_pages:
+                    continue
+                seen_pages.add(page_canonical)
+                pages_checked += 1
+
+                page_result = crawl_page(page_url, root_host)
+                for file_url in page_result.file_urls:
+                    if created >= max_files:
+                        break
+                    canonical_url = canonicalize_url(file_url)
+                    if canonical_url in seen_files:
+                        skipped += 1
+                        continue
+                    seen_files.add(canonical_url)
+
+                    title = title_from_url(file_url)
+                    allowed, _reason = is_allowed_candidate(file_url, title)
+                    if not allowed:
+                        skipped += 1
+                        continue
+
+                    existing = db.scalar(select(Document).where(Document.canonical_url == canonical_url))
+                    if existing:
+                        skipped += 1
+                        continue
+
+                    document = Document(
+                        search_run_id=run.id,
+                        title=title,
+                        source_url=file_url,
+                        canonical_url=canonical_url,
+                        provider="link_crawl",
+                        file_type=Path(urlparse_path(file_url)).suffix.lower().lstrip("."),
+                        status="download_queued",
+                    )
+                    db.add(document)
+                    db.flush()
+                    queued_document_ids.append(document.id)
+                    created += 1
+
+                if depth < max_depth:
+                    for next_url in page_result.page_urls:
+                        next_canonical = canonicalize_url(next_url)
+                        if next_canonical not in seen_pages:
+                            pending.append((next_url, depth + 1))
+
+                if queued_document_ids:
+                    db.commit()
+                    for document_id in queued_document_ids:
+                        download_document.delay(document_id)
+                    queued_document_ids = []
+
+            run.status = "completed"
+            run.result_count = created
+            run.completed_at = datetime.utcnow()
+            run.error = f"Checked {pages_checked} pages, queued {created}, skipped {skipped}."
+            db.commit()
+        except Exception as exc:
+            if is_transient_network_error(exc):
+                run.status = "running"
+                run.error = f"Temporary network problem while crawling {seed_url}: {exc}"
+                run.completed_at = None
+                db.commit()
+                crawl_link_source.apply_async(args=[run_id, seed_url], countdown=max(settings.archive_collection_wait_seconds, 10) * 5)
+                return
+
+            run.status = "failed"
+            run.error = str(exc)
+            run.completed_at = datetime.utcnow()
+            db.commit()
+
+
 @celery_app.task(name="download_document")
 def download_document(document_id: str) -> None:
     with SessionLocal() as db:
@@ -264,6 +368,18 @@ def download_document(document_id: str) -> None:
 def is_transient_network_error(exc: Exception) -> bool:
     message = str(exc).lower()
     return any(fragment in message for fragment in TRANSIENT_NETWORK_ERROR_TEXT)
+
+
+def urlparse_host(url: str) -> str:
+    from urllib.parse import urlparse
+
+    return urlparse(url).netloc.lower().removeprefix("www.")
+
+
+def urlparse_path(url: str) -> str:
+    from urllib.parse import urlparse
+
+    return urlparse(url).path
 
 
 @celery_app.task(name="extract_document")

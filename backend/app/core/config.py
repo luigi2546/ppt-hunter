@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     archive_collection_max_empty_batches: int = 5
     archive_collection_stale_download_minutes: int = 30
     min_pptx_image_count: int = 5
+    link_crawl_max_pages: int = 500
+    link_crawl_max_files: int = 5000
+    link_crawl_max_depth: int = 3
 
     brave_search_api_key: str | None = None
     dataforseo_login: str | None = None

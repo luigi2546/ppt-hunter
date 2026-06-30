@@ -34,7 +34,7 @@ from app.services.content_filters import is_allowed_candidate
 from app.services.public_portal import PUBLIC_FILE_STATUSES, build_manifest, export_public_portal as publish_public_portal
 from app.services.storage import ensure_local_file, is_remote_storage_enabled, upload_export_file, upload_file
 from app.services.urls import canonicalize_url, detect_file_type
-from app.tasks.jobs import collect_archive_batches, discover_presentations, download_document
+from app.tasks.jobs import collect_archive_batches, crawl_link_source, discover_presentations, download_document
 
 router = APIRouter()
 
@@ -151,6 +151,7 @@ def create_manual_links(payload: ManualLinksCreate, db: Session = Depends(get_db
     invalid: list[str] = []
     documents_to_queue: list[str] = []
     archive_collection_run_ids: list[str] = []
+    link_crawl_run_ids: list[tuple[str, str]] = []
     seen_inputs: set[str] = set()
     seen_candidates: set[str] = set()
 
@@ -180,6 +181,24 @@ def create_manual_links(payload: ManualLinksCreate, db: Session = Depends(get_db
                 db.add(run)
                 db.flush()
                 archive_collection_run_ids.append(run.id)
+                discovery_runs += 1
+            continue
+
+        if detect_file_type(url) not in {"ppt", "pptx"} and not is_archive_url(url):
+            existing_run = db.scalar(
+                select(SearchRun).where(
+                    SearchRun.provider == "link_crawl",
+                    SearchRun.query == url,
+                    SearchRun.status.in_(["queued", "running"]),
+                )
+            )
+            if existing_run:
+                skipped += 1
+            else:
+                run = SearchRun(query=url, provider="link_crawl", status="queued")
+                db.add(run)
+                db.flush()
+                link_crawl_run_ids.append((run.id, url))
                 discovery_runs += 1
             continue
 
@@ -235,6 +254,9 @@ def create_manual_links(payload: ManualLinksCreate, db: Session = Depends(get_db
 
     for run_id in archive_collection_run_ids:
         collect_archive_batches.delay(run_id, "presentation", 1, 0)
+
+    for run_id, seed_url in link_crawl_run_ids:
+        crawl_link_source.delay(run_id, seed_url)
 
     for document_id in documents_to_queue:
         download_document.delay(document_id)
