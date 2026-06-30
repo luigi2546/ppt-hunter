@@ -48,11 +48,13 @@ type PublicPortalResult = {
 };
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
+const PAGE_SIZE = 50;
 
 export function HunterDashboard() {
   const [linksText, setLinksText] = useState("");
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [stats, setStats] = useState<DocumentStats | null>(null);
+  const [page, setPage] = useState(0);
   const [loading, setLoading] = useState(false);
   const [bulkLoading, setBulkLoading] = useState(false);
   const [portalLoading, setPortalLoading] = useState(false);
@@ -68,9 +70,14 @@ export function HunterDashboard() {
     [documents],
   );
   const exportableCount = useMemo(() => documents.filter((doc) => doc.size_bytes !== null).length, [documents]);
+  const totalDocuments = stats?.total ?? documents.length;
+  const totalPages = Math.max(Math.ceil(totalDocuments / PAGE_SIZE), 1);
+  const pageStart = totalDocuments === 0 ? 0 : page * PAGE_SIZE + 1;
+  const pageEnd = Math.min((page + 1) * PAGE_SIZE, totalDocuments);
 
-  async function fetchDocuments() {
-    const response = await fetch(`${API_BASE}/api/documents?limit=500`, { cache: "no-store" });
+  async function fetchDocuments(pageIndex = page) {
+    const offset = pageIndex * PAGE_SIZE;
+    const response = await fetch(`${API_BASE}/api/documents?limit=${PAGE_SIZE}&offset=${offset}`, { cache: "no-store" });
     if (!response.ok) return [];
     return (await response.json()) as DocumentItem[];
   }
@@ -81,8 +88,8 @@ export function HunterDashboard() {
     return (await response.json()) as DocumentStats;
   }
 
-  async function refresh() {
-    const [docs, latestStats] = await Promise.all([fetchDocuments(), fetchStats()]);
+  async function refresh(pageIndex = page) {
+    const [docs, latestStats] = await Promise.all([fetchDocuments(pageIndex), fetchStats()]);
     setDocuments(docs);
     setStats(latestStats);
   }
@@ -91,7 +98,7 @@ export function HunterDashboard() {
     refresh().catch(() => setMessage("Backend is not reachable yet."));
     const timer = window.setInterval(() => refresh().catch(() => undefined), 5000);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [page]);
 
   async function submitLinks(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -113,7 +120,8 @@ export function HunterDashboard() {
       const result = (await response.json()) as ManualLinksResult;
       setMessage(formatManualLinksMessage(result));
       setLinksText("");
-      await refresh();
+      setPage(0);
+      await refresh(0);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to add links.");
     } finally {
@@ -151,7 +159,7 @@ export function HunterDashboard() {
       });
       if (!response.ok) throw new Error(await response.text());
       const result = await response.json();
-      let latestDocs = await fetchDocuments();
+      let latestDocs = await fetchDocuments(page);
       setDocuments(latestDocs);
       setMessage(`${result.queued} downloads queued. Preparing ZIP...`);
 
@@ -160,7 +168,7 @@ export function HunterDashboard() {
         if (active === 0) break;
         setMessage(`${active} downloads still running. Preparing ZIP...`);
         await wait(5000);
-        latestDocs = await fetchDocuments();
+        latestDocs = await fetchDocuments(page);
         setDocuments(latestDocs);
       }
 
@@ -242,7 +250,7 @@ export function HunterDashboard() {
           <section className="rounded border border-neutral-800 bg-neutral-900 p-4">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-sm font-semibold text-neutral-200">Scanned files</h2>
-              <button onClick={refresh} className="rounded p-2 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100" title="Refresh">
+              <button onClick={() => refresh()} className="rounded p-2 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100" title="Refresh">
                 <RefreshCw size={16} />
               </button>
             </div>
@@ -270,7 +278,9 @@ export function HunterDashboard() {
           <div className="flex flex-col gap-4 border-b border-neutral-800 p-4 md:flex-row md:items-center md:justify-between">
             <div>
               <h2 className="text-base font-semibold">Document queue</h2>
-              <p className="text-sm text-neutral-500">Found files move through download, extraction, and enrichment.</p>
+              <p className="text-sm text-neutral-500">
+                Showing newest first: {formatNumber(pageStart)}-{formatNumber(pageEnd)} of {formatNumber(totalDocuments)}.
+              </p>
             </div>
             <div className="flex items-center gap-3">
               <button
@@ -292,6 +302,14 @@ export function HunterDashboard() {
               <ShieldCheck className="text-emerald-400" size={22} />
             </div>
           </div>
+
+          <PaginationControls
+            page={page}
+            totalPages={totalPages}
+            onNewest={() => setPage(0)}
+            onOlder={() => setPage((current) => Math.min(current + 1, totalPages - 1))}
+            onNewer={() => setPage((current) => Math.max(current - 1, 0))}
+          />
 
           <div className="divide-y divide-neutral-800">
             {documents.map((document) => (
@@ -334,6 +352,14 @@ export function HunterDashboard() {
             ))}
             {documents.length === 0 ? <p className="p-6 text-sm text-neutral-500">No PPT or PPTX files found yet.</p> : null}
           </div>
+
+          <PaginationControls
+            page={page}
+            totalPages={totalPages}
+            onNewest={() => setPage(0)}
+            onOlder={() => setPage((current) => Math.min(current + 1, totalPages - 1))}
+            onNewer={() => setPage((current) => Math.max(current - 1, 0))}
+          />
         </section>
       </div>
     </main>
@@ -345,6 +371,54 @@ function Metric({ label, value }: { label: string; value: string }) {
     <div className="rounded border border-neutral-800 bg-neutral-950 px-4 py-3">
       <p className="text-xs text-neutral-500">{label}</p>
       <p className="text-xl font-semibold">{value}</p>
+    </div>
+  );
+}
+
+function PaginationControls({
+  page,
+  totalPages,
+  onNewest,
+  onOlder,
+  onNewer,
+}: {
+  page: number;
+  totalPages: number;
+  onNewest: () => void;
+  onOlder: () => void;
+  onNewer: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-3 border-b border-neutral-800 p-4 text-sm sm:flex-row sm:items-center sm:justify-between">
+      <p className="text-neutral-500">
+        Page {formatNumber(page + 1)} of {formatNumber(totalPages)}. New files appear on page 1.
+      </p>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onNewest}
+          disabled={page === 0}
+          className="rounded border border-neutral-700 px-3 py-2 text-neutral-300 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Newest
+        </button>
+        <button
+          type="button"
+          onClick={onNewer}
+          disabled={page === 0}
+          className="rounded border border-neutral-700 px-3 py-2 text-neutral-300 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Newer
+        </button>
+        <button
+          type="button"
+          onClick={onOlder}
+          disabled={page >= totalPages - 1}
+          className="rounded border border-neutral-700 px-3 py-2 text-neutral-300 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Older
+        </button>
+      </div>
     </div>
   );
 }

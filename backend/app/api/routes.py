@@ -65,8 +65,9 @@ def list_documents(
     status: str | None = None,
     q: str | None = None,
     limit: int = Query(default=500, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
 ) -> list[Document]:
-    stmt = select(Document).order_by(desc(Document.created_at)).limit(limit)
+    stmt = select(Document).order_by(desc(Document.created_at)).offset(offset).limit(limit)
     if status:
         stmt = stmt.where(Document.status == status)
     if q:
