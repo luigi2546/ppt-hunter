@@ -121,7 +121,7 @@ def create_manual_links(payload: ManualLinksCreate, db: Session = Depends(get_db
             run = SearchRun(query="presentation", provider="internet_archive", status="queued")
             db.add(run)
             db.flush()
-            discover_presentations.delay(run.id, run.query, run.provider, 500, True)
+            discover_presentations.delay(run.id, run.query, run.provider, 50, True)
             discovery_runs += 1
             continue
 
