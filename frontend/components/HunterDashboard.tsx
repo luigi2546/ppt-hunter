@@ -27,17 +27,29 @@ type ManualLinksResult = {
   discovery_runs: number;
 };
 
+type DocumentStats = {
+  total: number;
+  downloaded: number;
+  ready: number;
+  completed: number;
+  left: number;
+  queued: number;
+  downloading: number;
+  failed: number;
+  by_status: Record<string, number>;
+};
+
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
 
 export function HunterDashboard() {
   const [linksText, setLinksText] = useState("");
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
+  const [stats, setStats] = useState<DocumentStats | null>(null);
   const [loading, setLoading] = useState(false);
   const [bulkLoading, setBulkLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  const readyCount = useMemo(() => documents.filter((doc) => doc.status === "ready").length, [documents]);
   const downloadableCount = useMemo(
     () => documents.filter((doc) => ["discovered", "download_failed"].includes(doc.status)).length,
     [documents],
@@ -54,8 +66,16 @@ export function HunterDashboard() {
     return (await response.json()) as DocumentItem[];
   }
 
+  async function fetchStats() {
+    const response = await fetch(`${API_BASE}/api/documents/stats`, { cache: "no-store" });
+    if (!response.ok) return null;
+    return (await response.json()) as DocumentStats;
+  }
+
   async function refresh() {
-    setDocuments(await fetchDocuments());
+    const [docs, latestStats] = await Promise.all([fetchDocuments(), fetchStats()]);
+    setDocuments(docs);
+    setStats(latestStats);
   }
 
   useEffect(() => {
@@ -162,10 +182,12 @@ export function HunterDashboard() {
               <p className="text-sm text-neutral-400">Scan pasted links for PPT/PPTX files and dedupe downloads.</p>
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-3 text-sm">
-            <Metric label="Documents" value={documents.length.toString()} />
-            <Metric label="Ready" value={readyCount.toString()} />
-            <Metric label="Selected" value={selectedIds.size.toString()} />
+          <div className="grid grid-cols-2 gap-3 text-sm md:grid-cols-5">
+            <Metric label="Total" value={formatNumber(stats?.total ?? documents.length)} />
+            <Metric label="Downloaded" value={formatNumber(stats?.completed ?? exportableCount)} />
+            <Metric label="Left" value={formatNumber(stats?.left ?? activeDownloadCount + downloadableCount)} />
+            <Metric label="Active" value={formatNumber((stats?.queued ?? 0) + (stats?.downloading ?? 0))} />
+            <Metric label="Failed" value={formatNumber(stats?.failed ?? 0)} />
           </div>
         </div>
       </section>
@@ -326,6 +348,10 @@ function formatManualLinksMessage(result: ManualLinksResult) {
   if (result.discovery_runs > 0) parts.unshift(`${result.discovery_runs} background scan${result.discovery_runs > 1 ? "s" : ""} started`);
   if (result.invalid.length > 0) parts.push(`${result.invalid.length} invalid`);
   return parts.join(" - ");
+}
+
+function formatNumber(value: number) {
+  return value.toLocaleString();
 }
 
 function wait(ms: number) {

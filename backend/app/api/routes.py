@@ -8,7 +8,7 @@ from zipfile import ZIP_STORED, ZipFile
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
-from sqlalchemy import desc, or_, select
+from sqlalchemy import desc, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -19,6 +19,7 @@ from app.schemas.documents import (
     BulkDownloadRead,
     DocumentDetail,
     DocumentRead,
+    DocumentStatsRead,
     ManualDocumentCreate,
     ManualLinksCreate,
     ManualLinksRead,
@@ -66,6 +67,32 @@ def list_documents(
         like = f"%{q}%"
         stmt = stmt.where((Document.title.ilike(like)) | (Document.extracted_text.ilike(like)))
     return list(db.scalars(stmt))
+
+
+@router.get("/documents/stats", response_model=DocumentStatsRead)
+def document_stats(db: Session = Depends(get_db)) -> DocumentStatsRead:
+    rows = db.execute(select(Document.status, func.count()).group_by(Document.status)).all()
+    by_status = {str(status): int(count) for status, count in rows}
+    total = sum(by_status.values())
+    downloaded = by_status.get("downloaded", 0)
+    ready = by_status.get("ready", 0)
+    completed = downloaded + ready
+    queued = by_status.get("download_queued", 0) + by_status.get("discovered", 0)
+    downloading = by_status.get("downloading", 0)
+    failed = sum(count for status, count in by_status.items() if "fail" in status)
+    left = max(total - completed, 0)
+
+    return DocumentStatsRead(
+        total=total,
+        downloaded=downloaded,
+        ready=ready,
+        completed=completed,
+        left=left,
+        queued=queued,
+        downloading=downloading,
+        failed=failed,
+        by_status=by_status,
+    )
 
 
 @router.post("/documents", response_model=DocumentRead)

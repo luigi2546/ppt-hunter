@@ -49,6 +49,18 @@ class DocumentDetail(DocumentRead):
     error: str | None
 
 
+class DocumentStatsRead(BaseModel):
+    total: int
+    downloaded: int
+    ready: int
+    completed: int
+    left: int
+    queued: int
+    downloading: int
+    failed: int
+    by_status: dict[str, int]
+
+
 class ManualDocumentCreate(BaseModel):
     title: str = Field(min_length=1, max_length=500)
     url: HttpUrl
