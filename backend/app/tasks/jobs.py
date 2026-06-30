@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from sqlalchemy import func, select
@@ -18,6 +18,14 @@ from app.tasks.celery_app import celery_app
 
 
 ACTIVE_DOWNLOAD_STATUSES = {"download_queued", "downloading"}
+TRANSIENT_NETWORK_ERROR_TEXT = (
+    "temporary failure in name resolution",
+    "name or service not known",
+    "connection reset",
+    "connection aborted",
+    "timeout",
+    "timed out",
+)
 
 
 @celery_app.task(name="discover_presentations")
@@ -84,6 +92,7 @@ def collect_archive_batches(run_id: str, query: str = "presentation", start_page
     target_files = max(settings.archive_collection_target_files, batch_size)
     wait_seconds = max(settings.archive_collection_wait_seconds, 10)
     max_empty_batches = max(settings.archive_collection_max_empty_batches, 1)
+    stale_cutoff = datetime.utcnow() - timedelta(minutes=max(settings.archive_collection_stale_download_minutes, 5))
 
     with SessionLocal() as db:
         run = db.get(SearchRun, run_id)
@@ -93,6 +102,20 @@ def collect_archive_batches(run_id: str, query: str = "presentation", start_page
         run.status = "running"
         run.provider = "internet_archive"
         db.commit()
+
+        stale_documents = list(
+            db.scalars(
+                select(Document).where(
+                    Document.status.in_(ACTIVE_DOWNLOAD_STATUSES),
+                    Document.updated_at < stale_cutoff,
+                )
+            )
+        )
+        for document in stale_documents:
+            document.status = "download_failed"
+            document.error = f"Marked stale so collection can continue after {settings.archive_collection_stale_download_minutes} minutes."
+        if stale_documents:
+            db.commit()
 
         active_downloads = db.scalar(select(func.count()).select_from(Document).where(Document.status.in_(ACTIVE_DOWNLOAD_STATUSES))) or 0
         if active_downloads > 0:
@@ -167,6 +190,14 @@ def collect_archive_batches(run_id: str, query: str = "presentation", start_page
 
             collect_archive_batches.apply_async(args=[run_id, query, next_page, empty_batches], countdown=wait_seconds)
         except Exception as exc:
+            if is_transient_network_error(exc):
+                run.status = "running"
+                run.error = f"Temporary network problem, retrying page {start_page}: {exc}"
+                run.completed_at = None
+                db.commit()
+                collect_archive_batches.apply_async(args=[run_id, query, start_page, empty_batches], countdown=wait_seconds * 5)
+                return
+
             run.status = "failed"
             run.error = str(exc)
             run.completed_at = datetime.utcnow()
@@ -228,6 +259,11 @@ def download_document(document_id: str) -> None:
             document.status = "download_failed"
             document.error = str(exc)
             db.commit()
+
+
+def is_transient_network_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return any(fragment in message for fragment in TRANSIENT_NETWORK_ERROR_TEXT)
 
 
 @celery_app.task(name="extract_document")

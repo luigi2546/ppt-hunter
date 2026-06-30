@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     archive_collection_target_files: int = 200000
     archive_collection_wait_seconds: int = 60
     archive_collection_max_empty_batches: int = 5
+    archive_collection_stale_download_minutes: int = 30
     min_pptx_image_count: int = 5
 
     brave_search_api_key: str | None = None
