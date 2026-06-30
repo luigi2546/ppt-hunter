@@ -87,3 +87,9 @@ class BulkDownloadCreate(BaseModel):
 class BulkDownloadRead(BaseModel):
     queued: int
     skipped: int
+
+
+class MetadataExportRead(BaseModel):
+    document_count: int
+    csv_key: str
+    json_key: str

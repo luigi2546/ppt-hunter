@@ -1,3 +1,5 @@
+import csv
+import json
 from datetime import datetime
 from html.parser import HTMLParser
 from pathlib import Path
@@ -23,10 +25,11 @@ from app.schemas.documents import (
     ManualDocumentCreate,
     ManualLinksCreate,
     ManualLinksRead,
+    MetadataExportRead,
     SearchRunCreate,
     SearchRunRead,
 )
-from app.services.storage import ensure_local_file, upload_export_file
+from app.services.storage import ensure_local_file, is_remote_storage_enabled, upload_export_file, upload_file
 from app.services.urls import canonicalize_url, detect_file_type
 from app.tasks.jobs import discover_presentations, download_document
 
@@ -304,6 +307,37 @@ def export_downloaded_documents(
     )
 
 
+@router.post("/exports/metadata", response_model=MetadataExportRead)
+def export_metadata(db: Session = Depends(get_db)) -> MetadataExportRead:
+    documents = list(db.scalars(select(Document).order_by(desc(Document.updated_at))))
+    rows = [metadata_row(document) for document in documents]
+
+    metadata_dir = settings.storage_dir / "metadata"
+    metadata_dir.mkdir(parents=True, exist_ok=True)
+    csv_path = metadata_dir / "documents.csv"
+    json_path = metadata_dir / "documents.json"
+
+    fieldnames = list(rows[0].keys()) if rows else metadata_fieldnames()
+    with csv_path.open("w", newline="", encoding="utf-8") as output:
+        writer = csv.DictWriter(output, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+
+    json_path.write_text(json.dumps(rows, indent=2, default=str), encoding="utf-8")
+
+    csv_key = "metadata/documents.csv"
+    json_key = "metadata/documents.json"
+    if is_remote_storage_enabled():
+        upload_file(csv_path, csv_key, "text/csv")
+        upload_file(json_path, json_key, "application/json")
+
+    return MetadataExportRead(
+        document_count=len(documents),
+        csv_key=csv_key,
+        json_key=json_key,
+    )
+
+
 class PresentationLinkParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
@@ -454,6 +488,52 @@ def normalize_input_url(raw_url: str) -> str:
     if "." in parsed.path:
         return f"https://{url}"
     return url
+
+
+def metadata_fieldnames() -> list[str]:
+    return [
+        "id",
+        "title",
+        "source_url",
+        "provider",
+        "file_type",
+        "status",
+        "sha256",
+        "size_bytes",
+        "slide_count",
+        "language",
+        "category",
+        "confidence",
+        "summary",
+        "storage_key",
+        "file_path",
+        "error",
+        "created_at",
+        "updated_at",
+    ]
+
+
+def metadata_row(document: Document) -> dict[str, object]:
+    return {
+        "id": document.id,
+        "title": document.title,
+        "source_url": document.source_url,
+        "provider": document.provider,
+        "file_type": document.file_type,
+        "status": document.status,
+        "sha256": document.sha256,
+        "size_bytes": document.size_bytes,
+        "slide_count": document.slide_count,
+        "language": document.language,
+        "category": document.category,
+        "confidence": document.confidence,
+        "summary": document.summary,
+        "storage_key": document.storage_key,
+        "file_path": document.file_path,
+        "error": document.error,
+        "created_at": document.created_at.isoformat() if document.created_at else None,
+        "updated_at": document.updated_at.isoformat() if document.updated_at else None,
+    }
 
 
 def safe_archive_name(title: str, document_id: str, file_type: str, used_names: set[str]) -> str:
