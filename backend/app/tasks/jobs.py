@@ -87,13 +87,72 @@ def discover_presentations(run_id: str, query: str, provider_name: str, limit: i
             db.commit()
 
 
+def mark_stale_downloads(db) -> int:
+    stale_cutoff = datetime.utcnow() - timedelta(minutes=max(settings.archive_collection_stale_download_minutes, 5))
+    stale_documents = list(
+        db.scalars(
+            select(Document).where(
+                Document.status.in_(ACTIVE_DOWNLOAD_STATUSES),
+                Document.updated_at < stale_cutoff,
+            )
+        )
+    )
+    for document in stale_documents:
+        document.status = "download_failed"
+        document.error = f"Marked stale so collection can continue after {settings.archive_collection_stale_download_minutes} minutes."
+    if stale_documents:
+        db.commit()
+    return len(stale_documents)
+
+
+def count_active_downloads(db) -> int:
+    return db.scalar(select(func.count()).select_from(Document).where(Document.status.in_(ACTIVE_DOWNLOAD_STATUSES))) or 0
+
+
+def queue_discovered_downloads(db, provider: str, limit: int, run_id: str | None = None) -> list[str]:
+    if limit <= 0:
+        return []
+
+    stmt = (
+        select(Document)
+        .where(Document.provider == provider, Document.status == "discovered")
+        .order_by(Document.created_at)
+        .limit(limit)
+    )
+    if run_id:
+        stmt = stmt.where(Document.search_run_id == run_id)
+
+    documents = list(db.scalars(stmt))
+    if not documents and run_id:
+        documents = list(
+            db.scalars(
+                select(Document)
+                .where(Document.provider == provider, Document.status == "discovered")
+                .order_by(Document.created_at)
+                .limit(limit)
+            )
+        )
+
+    document_ids: list[str] = []
+    for document in documents:
+        document.status = "download_queued"
+        document.error = None
+        document_ids.append(document.id)
+
+    if document_ids:
+        db.commit()
+    return document_ids
+
+
 @celery_app.task(name="collect_archive_batches")
 def collect_archive_batches(run_id: str, query: str = "presentation", start_page: int = 1, empty_batches: int = 0) -> None:
     batch_size = max(settings.archive_collection_batch_size, 1)
     target_files = max(settings.archive_collection_target_files, batch_size)
     wait_seconds = max(settings.archive_collection_wait_seconds, 10)
+    pause_seconds = max(settings.archive_collection_pause_seconds, wait_seconds)
+    chunk_size = max(settings.archive_collection_download_chunk_size, 1)
+    max_active_downloads = max(settings.archive_collection_max_active_downloads, 1)
     max_empty_batches = max(settings.archive_collection_max_empty_batches, 1)
-    stale_cutoff = datetime.utcnow() - timedelta(minutes=max(settings.archive_collection_stale_download_minutes, 5))
 
     with SessionLocal() as db:
         run = db.get(SearchRun, run_id)
@@ -104,25 +163,29 @@ def collect_archive_batches(run_id: str, query: str = "presentation", start_page
         run.provider = "internet_archive"
         db.commit()
 
-        stale_documents = list(
-            db.scalars(
-                select(Document).where(
-                    Document.status.in_(ACTIVE_DOWNLOAD_STATUSES),
-                    Document.updated_at < stale_cutoff,
-                )
+        marked_stale = mark_stale_downloads(db)
+        active_downloads = count_active_downloads(db)
+        if active_downloads >= max_active_downloads:
+            stale_message = f" Marked {marked_stale} stale downloads." if marked_stale else ""
+            run.error = (
+                f"Paused: {active_downloads} active downloads. "
+                f"Next check in {pause_seconds}s before scanning page {start_page}.{stale_message}"
             )
-        )
-        for document in stale_documents:
-            document.status = "download_failed"
-            document.error = f"Marked stale so collection can continue after {settings.archive_collection_stale_download_minutes} minutes."
-        if stale_documents:
             db.commit()
+            collect_archive_batches.apply_async(args=[run_id, query, start_page, empty_batches], countdown=pause_seconds)
+            return
 
-        active_downloads = db.scalar(select(func.count()).select_from(Document).where(Document.status.in_(ACTIVE_DOWNLOAD_STATUSES))) or 0
-        if active_downloads > 0:
-            run.error = f"Waiting for {active_downloads} active downloads before scanning page {start_page}."
+        queue_limit = min(chunk_size, max_active_downloads - active_downloads)
+        queued_document_ids = queue_discovered_downloads(db, "internet_archive", queue_limit, run.id)
+        if queued_document_ids:
+            for document_id in queued_document_ids:
+                download_document.delay(document_id)
+            run.error = (
+                f"Queued {len(queued_document_ids)} downloads. "
+                f"Paused {pause_seconds}s before the next interval on page {start_page}."
+            )
             db.commit()
-            collect_archive_batches.apply_async(args=[run_id, query, start_page, empty_batches], countdown=wait_seconds)
+            collect_archive_batches.apply_async(args=[run_id, query, start_page, empty_batches], countdown=pause_seconds)
             return
 
         collected_count = db.scalar(select(func.count()).select_from(Document).where(Document.provider == "internet_archive")) or 0
@@ -140,7 +203,6 @@ def collect_archive_batches(run_id: str, query: str = "presentation", start_page
 
             created = 0
             skipped = 0
-            queued_document_ids: list[str] = []
             for result in results:
                 allowed, _reason = is_allowed_candidate(result.url, result.title, result.description)
                 if not allowed:
@@ -160,11 +222,10 @@ def collect_archive_batches(run_id: str, query: str = "presentation", start_page
                     provider=result.provider,
                     file_type=result.file_type,
                     description=result.description,
-                    status="download_queued",
+                    status="discovered",
                 )
                 db.add(document)
                 db.flush()
-                queued_document_ids.append(document.id)
                 created += 1
 
             run.result_count = (run.result_count or 0) + created
@@ -173,11 +234,11 @@ def collect_archive_batches(run_id: str, query: str = "presentation", start_page
                 empty_batches += 1
             else:
                 empty_batches = 0
-            run.error = f"Last batch: page {start_page}, {created} new, {skipped} skipped, next page {next_page}."
+            run.error = (
+                f"Last batch: page {start_page}, discovered {created}, skipped {skipped}, "
+                f"next page {next_page}. Downloads will queue in {chunk_size}-file intervals."
+            )
             db.commit()
-
-            for document_id in queued_document_ids:
-                download_document.delay(document_id)
 
             if exhausted or empty_batches >= max_empty_batches:
                 run.status = "completed"
@@ -189,14 +250,14 @@ def collect_archive_batches(run_id: str, query: str = "presentation", start_page
                 db.commit()
                 return
 
-            collect_archive_batches.apply_async(args=[run_id, query, next_page, empty_batches], countdown=wait_seconds)
+            collect_archive_batches.apply_async(args=[run_id, query, next_page, empty_batches], countdown=pause_seconds)
         except Exception as exc:
             if is_transient_network_error(exc):
                 run.status = "running"
                 run.error = f"Temporary network problem, retrying page {start_page}: {exc}"
                 run.completed_at = None
                 db.commit()
-                collect_archive_batches.apply_async(args=[run_id, query, start_page, empty_batches], countdown=wait_seconds * 5)
+                collect_archive_batches.apply_async(args=[run_id, query, start_page, empty_batches], countdown=pause_seconds * 2)
                 return
 
             run.status = "failed"

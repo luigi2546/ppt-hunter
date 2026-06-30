@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     archive_collection_batch_size: int = 500
     archive_collection_target_files: int = 200000
     archive_collection_wait_seconds: int = 60
+    archive_collection_download_chunk_size: int = 25
+    archive_collection_max_active_downloads: int = 5
+    archive_collection_pause_seconds: int = 180
     archive_collection_max_empty_batches: int = 5
     archive_collection_stale_download_minutes: int = 30
     min_pptx_image_count: int = 5
