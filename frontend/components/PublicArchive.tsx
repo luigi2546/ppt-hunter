@@ -1,6 +1,6 @@
 "use client";
 
-import { Database, Download, FileText, Search } from "lucide-react";
+import { ChevronDown, ChevronUp, Database, Download, FileArchive, FileText, Folder, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 type ArchiveFile = {
@@ -42,12 +42,20 @@ type ArchiveManifest = {
   days: ArchiveDay[];
 };
 
+type DayCard = ArchiveDay & {
+  dayNumber: number;
+  label: string;
+  hasFiles: boolean;
+};
+
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
+const CAMPAIGN_DAYS = 7;
 
 export function PublicArchive() {
   const [manifest, setManifest] = useState<ArchiveManifest | null>(null);
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [openDays, setOpenDays] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     fetch(`${API_BASE}/api/portal/manifest`, { cache: "no-store" })
@@ -55,156 +63,194 @@ export function PublicArchive() {
         if (!response.ok) throw new Error("Archive is not available yet.");
         return response.json() as Promise<ArchiveManifest>;
       })
-      .then(setManifest)
+      .then((payload) => {
+        setManifest(payload);
+        const firstDay = payload.days.find((day) => day.file_count > 0);
+        if (firstDay) setOpenDays(new Set([firstDay.day]));
+      })
       .catch((reason) => setError(reason instanceof Error ? reason.message : "Archive is not available yet."));
   }, []);
 
-  const filteredDays = useMemo(() => {
-    if (!manifest) return [];
+  const dayCards = useMemo(() => buildDayCards(manifest?.days ?? []), [manifest]);
+  const filteredDayCards = useMemo(() => {
     const cleanQuery = query.trim().toLowerCase();
-    return manifest.days
-      .map((day) => ({
-        ...day,
-        files: day.files.filter((file) => matchesQuery(file, cleanQuery)),
-      }))
-      .filter((day) => day.files.length > 0);
-  }, [manifest, query]);
+    return dayCards.map((day) => ({
+      ...day,
+      files: day.files.filter((file) => matchesQuery(file, cleanQuery)),
+    }));
+  }, [dayCards, query]);
 
-  const title = manifest?.title ?? "Research Document Archive";
-  const progress = manifest ? Math.min((manifest.total_files / Math.max(manifest.target_files, 1)) * 100, 100) : 0;
+  const activeDays = dayCards.filter((day) => day.hasFiles).length;
+  const remainingDays = Math.max(CAMPAIGN_DAYS - activeDays, 0);
+  const target = manifest?.target_files ?? 200000;
+  const totalFiles = manifest?.total_files ?? 0;
+  const totalSize = manifest?.total_size ?? 0;
+  const progress = Math.min((totalFiles / Math.max(target, 1)) * 100, 100);
+
+  function toggleDay(day: string) {
+    setOpenDays((current) => {
+      const next = new Set(current);
+      if (next.has(day)) next.delete(day);
+      else next.add(day);
+      return next;
+    });
+  }
 
   return (
-    <main className="min-h-screen bg-slate-100 text-slate-950">
-      <header className="bg-[linear-gradient(135deg,#0f5132,#1f7a5a_55%,#234c75)] text-white">
-        <div className="mx-auto max-w-7xl px-5 py-8">
-          <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
-            <div>
-              <h1 className="text-4xl font-bold tracking-normal md:text-5xl">{title}</h1>
-              <p className="mt-2 text-sm text-white/80">PowerPoint files collected, deduplicated, and indexed for download.</p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <a
-                className="inline-flex h-10 items-center gap-2 rounded bg-white px-3 text-sm font-semibold text-emerald-900 hover:bg-emerald-50"
-                href={resolveUrl(manifest?.zip_url ?? "/api/exports/documents.zip?limit=5000")}
-              >
-                <Download size={16} />
-                Download All ZIP
-              </a>
-              <a
-                className="inline-flex h-10 items-center gap-2 rounded border border-white/25 bg-white/15 px-3 text-sm font-semibold text-white hover:bg-white/20"
-                href={resolveUrl(manifest?.metadata.csv_url ?? "/api/exports/metadata")}
-              >
-                <Database size={16} />
-                Metadata CSV
-              </a>
-              <a
-                className="inline-flex h-10 items-center gap-2 rounded border border-white/25 bg-white/15 px-3 text-sm font-semibold text-white hover:bg-white/20"
-                href={resolveUrl(manifest?.metadata.json_url ?? "/api/exports/metadata")}
-              >
-                <FileText size={16} />
-                Metadata JSON
-              </a>
-            </div>
-          </div>
-
-          <section className="mt-7 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <Metric label="Total Files" value={formatNumber(manifest?.total_files ?? 0)} />
-            <Metric label="Total Size" value={formatSize(manifest?.total_size ?? 0)} />
-            <Metric label="Collection Days" value={formatNumber(manifest?.days.length ?? 0)} />
-            <Metric label="Target Progress" value={`${progress.toFixed(1)}%`} />
-          </section>
+    <main className="min-h-screen bg-[#eef1f4] px-4 py-4 text-[#111827] md:px-8">
+      <section className="mx-auto max-w-6xl">
+        <div className="grid gap-4 md:grid-cols-4">
+          <Metric label="Total Files" value={formatNumber(totalFiles)} />
+          <Metric label="Total Size" value={formatSize(totalSize)} />
+          <Metric label="Days Active" value={formatNumber(activeDays)} />
+          <Metric label="Days Remaining" value={formatNumber(remainingDays)} />
         </div>
-      </header>
 
-      <section className="mx-auto max-w-7xl px-5 py-6">
-        <div className="mb-5 grid gap-3 md:grid-cols-[1fr_auto] md:items-center">
+        <section className="mt-5 rounded-lg bg-white px-5 py-4 shadow-sm ring-1 ring-black/5">
+          <div className="mb-2 flex items-center justify-between gap-4 text-xs text-slate-700">
+            <span>Progress toward {formatNumber(target)} file target</span>
+            <span>
+              {formatNumber(totalFiles)} / {formatNumber(target)} ({progress.toFixed(1)}%)
+            </span>
+          </div>
+          <div className="h-2 overflow-hidden rounded-full bg-slate-200">
+            <div className="h-full rounded-full bg-[#0075d4]" style={{ width: `${Math.max(progress, totalFiles > 0 ? 0.5 : 0)}%` }} />
+          </div>
+        </section>
+
+        <div className="mt-5 grid gap-3 md:grid-cols-[1fr_auto] md:items-center">
           <label className="relative block">
-            <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+            <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Filter by title, category, source, or file type"
-              className="h-11 w-full rounded border border-slate-300 bg-white pl-10 pr-3 text-sm outline-none focus:border-emerald-700 focus:ring-2 focus:ring-emerald-700/15"
+              placeholder="Filter individual files"
+              className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-sm shadow-sm outline-none focus:border-[#0075d4] focus:ring-2 focus:ring-[#0075d4]/15"
             />
           </label>
-          <p className="text-sm text-slate-500">
-            {manifest ? `Updated ${new Date(manifest.generated_at).toLocaleString()}` : error || "Loading archive..."}
-          </p>
+          <div className="flex flex-wrap gap-2">
+            <a className="inline-flex h-10 items-center gap-2 rounded-md bg-[#0075d4] px-3 text-sm font-semibold text-white hover:bg-[#0064b5]" href={resolveUrl(manifest?.zip_url ?? "/api/exports/documents.zip?limit=5000")}>
+              <Download size={16} />
+              Download All ZIP
+            </a>
+            <a className="inline-flex h-10 items-center gap-2 rounded-md bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-black/5 hover:bg-slate-50" href={resolveUrl(manifest?.metadata.csv_url ?? "/api/exports/metadata.csv")}>
+              <Database size={16} />
+              CSV
+            </a>
+            <a className="inline-flex h-10 items-center gap-2 rounded-md bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-black/5 hover:bg-slate-50" href={resolveUrl(manifest?.metadata.json_url ?? "/api/exports/metadata.json")}>
+              <FileText size={16} />
+              JSON
+            </a>
+          </div>
         </div>
 
-        <div className="space-y-4">
-          {filteredDays.map((day) => (
-            <article key={day.day} className="overflow-hidden rounded border border-slate-200 bg-white shadow-sm">
-              <div className="flex flex-col gap-3 border-b border-slate-200 px-5 py-4 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <h2 className="text-lg font-bold">{day.day}</h2>
-                  <p className="mt-1 text-sm text-slate-500">
-                    {formatNumber(day.files.length)} files - {formatSize(sumSize(day.files))} - {formatNumber(day.pptx_count)} PPTX -{" "}
-                    {formatNumber(day.ppt_count)} PPT
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="w-fit rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-800">
-                    {formatNumber(day.file_count)} collected
+        <section className="mt-5 space-y-4">
+          {filteredDayCards.map((day) => {
+            const isOpen = openDays.has(day.day);
+            return (
+              <article key={day.day} className="overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-black/5">
+                <button
+                  type="button"
+                  onClick={() => toggleDay(day.day)}
+                  className="grid w-full grid-cols-[auto_1fr_auto] items-center gap-3 px-5 py-4 text-left"
+                >
+                  <span className={`rounded px-3 py-2 text-xs font-bold uppercase text-white ${day.hasFiles ? "bg-[#0075d4]" : "bg-[#060b27]"}`}>
+                    Day {day.dayNumber}
                   </span>
-                  <a
-                    className="inline-flex h-9 items-center gap-2 rounded bg-slate-900 px-3 text-xs font-semibold text-white hover:bg-slate-700"
-                    href={resolveUrl(day.zip_url ?? `/api/exports/documents.zip?day=${day.day}&limit=5000`)}
-                  >
-                    <Download size={15} />
-                    Download ZIP
-                  </a>
-                </div>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[760px] border-collapse text-left text-sm">
-                  <thead>
-                    <tr className="bg-slate-50 text-xs uppercase text-slate-500">
-                      <th className="px-4 py-3">File</th>
-                      <th className="px-4 py-3">Type</th>
-                      <th className="px-4 py-3">Info</th>
-                      <th className="px-4 py-3">Size</th>
-                      <th className="px-4 py-3">Download</th>
-                      <th className="px-4 py-3">Source</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {day.files.map((file) => (
-                      <tr key={file.id} className="border-t border-slate-100 hover:bg-slate-50">
-                        <td className="px-4 py-3">
-                          <p className="font-semibold text-slate-950">{file.title}</p>
-                          <p className="mt-1 line-clamp-2 max-w-2xl text-xs text-slate-500">{file.summary || file.source_url}</p>
-                        </td>
-                        <td className="px-4 py-3 font-semibold uppercase text-slate-600">{file.file_type}</td>
-                        <td className="px-4 py-3 text-slate-600">{file.slides ? `${formatNumber(file.slides)} slides` : file.category || ""}</td>
-                        <td className="px-4 py-3 text-slate-600">{formatSize(file.size)}</td>
-                        <td className="px-4 py-3">
-                          <a
-                            className="inline-flex h-9 items-center gap-2 rounded bg-slate-900 px-3 text-xs font-semibold text-white hover:bg-slate-700"
-                            href={resolveUrl(file.download_url)}
-                          >
-                            <Download size={15} />
-                            File
-                          </a>
-                        </td>
-                        <td className="px-4 py-3">
-                          <a className="font-semibold text-blue-700 hover:text-blue-900" href={file.source_url} target="_blank" rel="noopener">
-                            Source
-                          </a>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </article>
-          ))}
-        </div>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-semibold text-slate-950">
+                      Day {day.dayNumber} - {day.label}
+                    </span>
+                    <span className="mt-1 block text-xs text-slate-500">
+                      {day.hasFiles ? `${formatNumber(day.file_count)} files - ${formatSize(day.size)}` : "Collection not yet started"}
+                    </span>
+                  </span>
+                  <span className="flex items-center gap-4 text-xs text-slate-600">
+                    {day.hasFiles ? (
+                      <>
+                        <span>{formatNumber(day.pptx_count)} PPTX</span>
+                        <span>{formatNumber(day.ppt_count)} PPT</span>
+                      </>
+                    ) : null}
+                    {isOpen ? <ChevronUp className="text-slate-400" size={18} /> : <ChevronDown className="text-slate-400" size={18} />}
+                  </span>
+                </button>
 
-        {manifest && filteredDays.length === 0 ? (
-          <div className="rounded border border-slate-200 bg-white px-5 py-14 text-center text-slate-500">No files match this filter yet.</div>
-        ) : null}
-        {error ? <div className="rounded border border-slate-200 bg-white px-5 py-14 text-center text-slate-500">{error}</div> : null}
+                {isOpen && day.hasFiles ? (
+                  <>
+                    <section className="border-t border-slate-200 bg-slate-50 px-5 py-4">
+                      <div className="mb-2 flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                          <FileArchive size={16} className="text-amber-600" />
+                          ZIP Downloads
+                        </div>
+                        <a
+                          className="inline-flex h-9 items-center gap-2 rounded-md bg-[#0075d4] px-3 text-xs font-semibold text-white hover:bg-[#0064b5]"
+                          href={resolveUrl(day.zip_url ?? `/api/exports/documents.zip?day=${day.day}&limit=5000`)}
+                        >
+                          <Download size={15} />
+                          Download ZIP
+                        </a>
+                      </div>
+                      <p className="text-xs text-slate-500">ZIP files are prepared when requested. Large archives can take a moment to start.</p>
+                    </section>
+
+                    <section className="border-t border-slate-200">
+                      <div className="flex items-center justify-between px-5 py-3 text-xs">
+                        <div className="flex items-center gap-2 font-semibold text-[#0064b5]">
+                          <Folder size={15} className="text-amber-500" />
+                          Browse individual files ({formatNumber(day.files.length)} total)
+                        </div>
+                        <span className="font-semibold text-[#0064b5]">Show</span>
+                      </div>
+                      {day.files.length > 0 ? (
+                        <div className="overflow-x-auto border-t border-slate-100">
+                          <table className="w-full min-w-[740px] border-collapse text-left text-xs">
+                            <thead>
+                              <tr className="bg-slate-50 uppercase text-slate-500">
+                                <th className="px-5 py-3">File</th>
+                                <th className="px-3 py-3">Type</th>
+                                <th className="px-3 py-3">Size</th>
+                                <th className="px-3 py-3">File</th>
+                                <th className="px-3 py-3">Source</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {day.files.map((file) => (
+                                <tr key={file.id} className="border-t border-slate-100 hover:bg-slate-50">
+                                  <td className="px-5 py-3">
+                                    <p className="line-clamp-1 font-semibold text-slate-900">{file.title}</p>
+                                    <p className="mt-1 line-clamp-1 text-slate-500">{file.summary || file.source_url}</p>
+                                  </td>
+                                  <td className="px-3 py-3 font-semibold uppercase text-slate-600">{file.file_type}</td>
+                                  <td className="px-3 py-3 text-slate-600">{formatSize(file.size)}</td>
+                                  <td className="px-3 py-3">
+                                    <a className="font-semibold text-[#0064b5] hover:text-[#004f91]" href={resolveUrl(file.download_url)}>
+                                      Download
+                                    </a>
+                                  </td>
+                                  <td className="px-3 py-3">
+                                    <a className="font-semibold text-[#0064b5] hover:text-[#004f91]" href={file.source_url} target="_blank" rel="noopener">
+                                      Source
+                                    </a>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : (
+                        <div className="border-t border-slate-100 px-5 py-5 text-xs text-slate-500">No files match this filter.</div>
+                      )}
+                    </section>
+                  </>
+                ) : null}
+              </article>
+            );
+          })}
+        </section>
+
+        {error ? <div className="mt-5 rounded-lg bg-white px-5 py-10 text-center text-sm text-slate-500 shadow-sm ring-1 ring-black/5">{error}</div> : null}
       </section>
     </main>
   );
@@ -212,11 +258,60 @@ export function PublicArchive() {
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded border border-white/20 bg-white/15 px-4 py-4">
-      <p className="text-3xl font-bold">{value}</p>
-      <p className="mt-1 text-xs text-white/75">{label}</p>
+    <div className="rounded-lg bg-white px-6 py-5 text-center shadow-sm ring-1 ring-black/5">
+      <p className="text-3xl font-bold text-[#0075d4]">{value}</p>
+      <p className="mt-2 text-[10px] font-semibold uppercase text-slate-500">{label}</p>
     </div>
   );
+}
+
+function buildDayCards(days: ArchiveDay[]) {
+  const byDay = new Map(days.map((day) => [day.day, day]));
+  const earliest = days.length > 0 ? parseDate(days.map((day) => day.day).sort()[0]) : new Date();
+  const cards: DayCard[] = [];
+
+  for (let index = 0; index < CAMPAIGN_DAYS; index += 1) {
+    const date = new Date(earliest);
+    date.setDate(earliest.getDate() + index);
+    const key = toDateKey(date);
+    const existing = byDay.get(key);
+    cards.push({
+      day: key,
+      dayNumber: index + 1,
+      label: formatDayLabel(date),
+      file_count: existing?.file_count ?? 0,
+      size: existing?.size ?? 0,
+      ppt_count: existing?.ppt_count ?? 0,
+      pptx_count: existing?.pptx_count ?? 0,
+      zip_url: existing?.zip_url ?? `/api/exports/documents.zip?day=${key}&limit=5000`,
+      files: existing?.files ?? [],
+      hasFiles: Boolean(existing && existing.file_count > 0),
+    });
+  }
+
+  const active = cards.filter((day) => day.hasFiles);
+  const inactive = cards.filter((day) => !day.hasFiles);
+  return [...active, ...inactive];
+}
+
+function parseDate(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function toDateKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function formatDayLabel(date: Date) {
+  return new Intl.DateTimeFormat("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  }).format(date);
 }
 
 function matchesQuery(file: ArchiveFile, query: string) {
@@ -228,10 +323,6 @@ function resolveUrl(url: string) {
   if (!url) return "#";
   if (/^https?:\/\//.test(url)) return url;
   return `${API_BASE}${url.startsWith("/") ? url : `/${url}`}`;
-}
-
-function sumSize(files: ArchiveFile[]) {
-  return files.reduce((total, file) => total + Number(file.size || 0), 0);
 }
 
 function formatNumber(value: number) {
