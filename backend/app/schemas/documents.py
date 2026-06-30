@@ -1,0 +1,64 @@
+from datetime import datetime
+
+from pydantic import BaseModel, Field, HttpUrl
+
+
+class SearchRunCreate(BaseModel):
+    query: str = Field(min_length=2, max_length=500)
+    provider: str = "auto"
+    limit: int = Field(default=500, ge=1, le=500)
+    auto_download: bool = True
+
+
+class SearchRunRead(BaseModel):
+    id: str
+    query: str
+    provider: str
+    status: str
+    result_count: int
+    error: str | None
+    created_at: datetime
+    completed_at: datetime | None
+
+    model_config = {"from_attributes": True}
+
+
+class DocumentRead(BaseModel):
+    id: str
+    title: str
+    source_url: str
+    provider: str
+    file_type: str
+    status: str
+    description: str | None
+    sha256: str | None
+    size_bytes: int | None
+    slide_count: int | None
+    language: str | None
+    category: str | None
+    confidence: float | None
+    summary: str | None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class DocumentDetail(DocumentRead):
+    extracted_text: str | None
+    error: str | None
+
+
+class ManualDocumentCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=500)
+    url: HttpUrl
+
+
+class BulkDownloadCreate(BaseModel):
+    provider: str | None = None
+    limit: int = Field(default=500, ge=1, le=500)
+
+
+class BulkDownloadRead(BaseModel):
+    queued: int
+    skipped: int

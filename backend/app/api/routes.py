@@ -1,0 +1,199 @@
+from datetime import datetime
+from pathlib import Path
+from re import sub
+from zipfile import ZIP_STORED, ZipFile
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import FileResponse
+from sqlalchemy import desc, or_, select
+from sqlalchemy.orm import Session
+
+from app.core.config import settings
+from app.db.session import get_db
+from app.models.document import Document, SearchRun
+from app.schemas.documents import (
+    BulkDownloadCreate,
+    BulkDownloadRead,
+    DocumentDetail,
+    DocumentRead,
+    ManualDocumentCreate,
+    SearchRunCreate,
+    SearchRunRead,
+)
+from app.services.storage import ensure_local_file, upload_export_file
+from app.services.urls import canonicalize_url, detect_file_type
+from app.tasks.jobs import discover_presentations, download_document
+
+router = APIRouter()
+
+
+@router.get("/health")
+def health() -> dict[str, str]:
+    return {"status": "ok"}
+
+
+@router.post("/search-runs", response_model=SearchRunRead)
+def create_search_run(payload: SearchRunCreate, db: Session = Depends(get_db)) -> SearchRun:
+    run = SearchRun(query=payload.query, provider=payload.provider, status="queued")
+    db.add(run)
+    db.commit()
+    db.refresh(run)
+    discover_presentations.delay(run.id, payload.query, payload.provider, 500, True)
+    return run
+
+
+@router.get("/search-runs", response_model=list[SearchRunRead])
+def list_search_runs(db: Session = Depends(get_db), limit: int = Query(default=20, ge=1, le=100)) -> list[SearchRun]:
+    return list(db.scalars(select(SearchRun).order_by(desc(SearchRun.created_at)).limit(limit)))
+
+
+@router.get("/documents", response_model=list[DocumentRead])
+def list_documents(
+    db: Session = Depends(get_db),
+    status: str | None = None,
+    q: str | None = None,
+    limit: int = Query(default=500, ge=1, le=1000),
+) -> list[Document]:
+    stmt = select(Document).order_by(desc(Document.created_at)).limit(limit)
+    if status:
+        stmt = stmt.where(Document.status == status)
+    if q:
+        like = f"%{q}%"
+        stmt = stmt.where((Document.title.ilike(like)) | (Document.extracted_text.ilike(like)))
+    return list(db.scalars(stmt))
+
+
+@router.post("/documents", response_model=DocumentRead)
+def create_manual_document(payload: ManualDocumentCreate, db: Session = Depends(get_db)) -> Document:
+    url = str(payload.url)
+    file_type = detect_file_type(url)
+    if file_type not in {"ppt", "pptx"}:
+        raise HTTPException(status_code=400, detail="Only .ppt and .pptx URLs are supported")
+
+    canonical_url = canonicalize_url(url)
+    existing = db.scalar(select(Document).where(Document.canonical_url == canonical_url))
+    if existing:
+        return existing
+
+    document = Document(
+        title=payload.title,
+        source_url=url,
+        canonical_url=canonical_url,
+        provider="manual",
+        file_type=file_type,
+        status="discovered",
+    )
+    db.add(document)
+    db.commit()
+    db.refresh(document)
+    return document
+
+
+@router.get("/documents/{document_id}", response_model=DocumentDetail)
+def get_document(document_id: str, db: Session = Depends(get_db)) -> Document:
+    document = db.get(Document, document_id)
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return document
+
+
+@router.post("/documents/{document_id}/download", response_model=DocumentRead)
+def queue_download(document_id: str, db: Session = Depends(get_db)) -> Document:
+    document = db.get(Document, document_id)
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+    document.status = "download_queued"
+    db.commit()
+    db.refresh(document)
+    download_document.delay(document.id)
+    return document
+
+
+@router.post("/documents/download-all", response_model=BulkDownloadRead)
+def queue_all_downloads(payload: BulkDownloadCreate, db: Session = Depends(get_db)) -> BulkDownloadRead:
+    eligible_statuses = ["discovered", "download_failed"]
+    stmt = (
+        select(Document)
+        .where(Document.status.in_(eligible_statuses))
+        .order_by(desc(Document.created_at))
+        .limit(payload.limit)
+    )
+    if payload.provider:
+        stmt = stmt.where(Document.provider == payload.provider)
+
+    documents = list(db.scalars(stmt))
+    total_stmt = select(Document).where(Document.status.in_(eligible_statuses))
+    if payload.provider:
+        total_stmt = total_stmt.where(Document.provider == payload.provider)
+    total_eligible = len(list(db.scalars(total_stmt)))
+
+    queued = 0
+    for document in documents:
+        document.status = "download_queued"
+        queued += 1
+    db.commit()
+
+    for document in documents:
+        download_document.delay(document.id)
+
+    return BulkDownloadRead(queued=queued, skipped=max(total_eligible - queued, 0))
+
+
+@router.get("/exports/documents.zip")
+@router.get("/documents/export.zip")
+def export_downloaded_documents(
+    db: Session = Depends(get_db),
+    provider: str | None = None,
+    limit: int = Query(default=500, ge=1, le=500),
+) -> FileResponse:
+    stmt = (
+        select(Document)
+        .where(or_(Document.file_path.is_not(None), Document.storage_key.is_not(None)))
+        .order_by(desc(Document.updated_at))
+        .limit(limit)
+    )
+    if provider:
+        stmt = stmt.where(Document.provider == provider)
+
+    documents = []
+    local_paths: dict[str, Path] = {}
+    for document in db.scalars(stmt):
+        local_path = ensure_local_file(document.id, document.file_type, document.file_path, document.storage_key)
+        if local_path:
+            documents.append(document)
+            local_paths[document.id] = local_path
+    if not documents:
+        raise HTTPException(status_code=404, detail="No downloaded files are available to export")
+
+    export_dir = settings.storage_dir / "exports"
+    export_dir.mkdir(parents=True, exist_ok=True)
+    export_path = export_dir / f"ppt-hunter-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}.zip"
+
+    used_names: set[str] = set()
+    with ZipFile(export_path, "w", compression=ZIP_STORED) as archive:
+        for document in documents:
+            source = local_paths[document.id]
+            archive_name = safe_archive_name(document.title, document.id, document.file_type, used_names)
+            archive.write(source, archive_name)
+
+    upload_export_file(export_path)
+
+    return FileResponse(
+        export_path,
+        media_type="application/zip",
+        filename=export_path.name,
+    )
+
+
+def safe_archive_name(title: str, document_id: str, file_type: str, used_names: set[str]) -> str:
+    clean_title = sub(r"[^A-Za-z0-9._ -]+", "", title).strip().replace(" ", "_")[:120]
+    if not clean_title:
+        clean_title = "presentation"
+    base_name = f"{clean_title}_{document_id[:8]}.{file_type}"
+    archive_name = base_name
+    counter = 2
+    while archive_name in used_names:
+        archive_name = f"{clean_title}_{document_id[:8]}_{counter}.{file_type}"
+        counter += 1
+    used_names.add(archive_name)
+    return archive_name
