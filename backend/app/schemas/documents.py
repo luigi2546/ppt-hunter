@@ -54,6 +54,18 @@ class ManualDocumentCreate(BaseModel):
     url: HttpUrl
 
 
+class ManualLinksCreate(BaseModel):
+    urls: list[str] = Field(default_factory=list, max_length=500)
+
+
+class ManualLinksRead(BaseModel):
+    created: int
+    existing: int
+    queued: int
+    skipped: int
+    invalid: list[str]
+
+
 class BulkDownloadCreate(BaseModel):
     provider: str | None = None
     limit: int = Field(default=500, ge=1, le=500)

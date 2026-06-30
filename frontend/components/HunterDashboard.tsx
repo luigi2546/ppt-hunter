@@ -1,17 +1,7 @@
 "use client";
 
-import { Download, FileSearch, Loader2, RefreshCw, ShieldCheck, Sparkles } from "lucide-react";
+import { Download, FileSearch, Link as LinkIcon, Loader2, RefreshCw, ShieldCheck } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
-
-type SearchRun = {
-  id: string;
-  query: string;
-  provider: string;
-  status: string;
-  result_count: number;
-  error: string | null;
-  created_at: string;
-};
 
 type DocumentItem = {
   id: string;
@@ -28,16 +18,23 @@ type DocumentItem = {
   summary: string | null;
 };
 
+type ManualLinksResult = {
+  created: number;
+  existing: number;
+  queued: number;
+  skipped: number;
+  invalid: string[];
+};
+
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
 
 export function HunterDashboard() {
-  const [query, setQuery] = useState("artificial intelligence strategy");
-  const [provider, setProvider] = useState("all");
-  const [runs, setRuns] = useState<SearchRun[]>([]);
+  const [linksText, setLinksText] = useState("");
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [bulkLoading, setBulkLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const readyCount = useMemo(() => documents.filter((doc) => doc.status === "ready").length, [documents]);
   const downloadableCount = useMemo(
@@ -57,12 +54,7 @@ export function HunterDashboard() {
   }
 
   async function refresh() {
-    const [runsResponse, docs] = await Promise.all([
-      fetch(`${API_BASE}/api/search-runs`, { cache: "no-store" }),
-      fetchDocuments(),
-    ]);
-    if (runsResponse.ok) setRuns(await runsResponse.json());
-    setDocuments(docs);
+    setDocuments(await fetchDocuments());
   }
 
   useEffect(() => {
@@ -71,21 +63,29 @@ export function HunterDashboard() {
     return () => window.clearInterval(timer);
   }, []);
 
-  async function submitSearch(event: FormEvent<HTMLFormElement>) {
+  async function submitLinks(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const urls = parseLinks(linksText);
+    if (urls.length === 0) {
+      setMessage("Add at least one PPT or PPTX URL.");
+      return;
+    }
+
     setLoading(true);
     setMessage(null);
     try {
-      const response = await fetch(`${API_BASE}/api/search-runs`, {
+      const response = await fetch(`${API_BASE}/api/documents/manual-links`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query, provider, limit: 500, auto_download: true }),
+        body: JSON.stringify({ urls }),
       });
       if (!response.ok) throw new Error(await response.text());
-      setMessage("Discovery and downloads queued.");
+      const result = (await response.json()) as ManualLinksResult;
+      setMessage(formatManualLinksMessage(result));
+      setLinksText("");
       await refresh();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Unable to queue discovery.");
+      setMessage(error instanceof Error ? error.message : "Unable to add links.");
     } finally {
       setLoading(false);
     }
@@ -94,6 +94,20 @@ export function HunterDashboard() {
   async function queueDownload(documentId: string) {
     await fetch(`${API_BASE}/api/documents/${documentId}/download`, { method: "POST" });
     await refresh();
+  }
+
+  async function toggleSelected(document: DocumentItem, checked: boolean) {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (checked) next.add(document.id);
+      else next.delete(document.id);
+      return next;
+    });
+
+    if (checked && ["discovered", "download_failed"].includes(document.status)) {
+      setMessage(`Queued ${document.title}.`);
+      await queueDownload(document.id);
+    }
   }
 
   async function queueAllDownloads() {
@@ -138,85 +152,69 @@ export function HunterDashboard() {
     <main className="min-h-screen bg-neutral-950 text-neutral-100">
       <section className="border-b border-neutral-800 bg-neutral-900">
         <div className="mx-auto flex max-w-7xl flex-col gap-6 px-5 py-6 md:flex-row md:items-center md:justify-between">
-          <div>
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded bg-emerald-500 text-neutral-950">
-                <FileSearch size={22} />
-              </div>
-              <div>
-                <h1 className="text-2xl font-semibold tracking-normal">PPT Hunter</h1>
-                <p className="text-sm text-neutral-400">Public deck discovery, extraction, and AI triage.</p>
-              </div>
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded bg-emerald-500 text-neutral-950">
+              <FileSearch size={22} />
+            </div>
+            <div>
+              <h1 className="text-2xl font-semibold tracking-normal">PPT Hunter</h1>
+              <p className="text-sm text-neutral-400">Link-based deck collection and dedupe.</p>
             </div>
           </div>
           <div className="grid grid-cols-3 gap-3 text-sm">
             <Metric label="Documents" value={documents.length.toString()} />
             <Metric label="Ready" value={readyCount.toString()} />
-            <Metric label="Runs" value={runs.length.toString()} />
+            <Metric label="Selected" value={selectedIds.size.toString()} />
           </div>
         </div>
       </section>
 
       <div className="mx-auto grid max-w-7xl gap-6 px-5 py-6 lg:grid-cols-[360px_1fr]">
         <aside className="space-y-4">
-          <form onSubmit={submitSearch} className="rounded border border-neutral-800 bg-neutral-900 p-4">
-            <label className="text-sm font-medium text-neutral-300" htmlFor="query">
-              Discovery query
+          <form onSubmit={submitLinks} className="rounded border border-neutral-800 bg-neutral-900 p-4">
+            <label className="text-sm font-medium text-neutral-300" htmlFor="links">
+              PPT/PPTX links
             </label>
             <textarea
-              id="query"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              className="mt-2 min-h-28 w-full resize-none rounded border border-neutral-700 bg-neutral-950 p-3 text-sm outline-none ring-emerald-500 focus:ring-2"
+              id="links"
+              value={linksText}
+              onChange={(event) => setLinksText(event.target.value)}
+              placeholder="https://example.com/deck.pptx"
+              className="mt-2 min-h-44 w-full resize-none rounded border border-neutral-700 bg-neutral-950 p-3 text-sm outline-none ring-emerald-500 focus:ring-2"
             />
-            <label className="mt-4 block text-sm font-medium text-neutral-300" htmlFor="provider">
-              Provider
-            </label>
-            <select
-              id="provider"
-              value={provider}
-              onChange={(event) => setProvider(event.target.value)}
-              className="mt-2 w-full rounded border border-neutral-700 bg-neutral-950 p-3 text-sm outline-none ring-emerald-500 focus:ring-2"
-            >
-              <option value="auto">Auto</option>
-              <option value="all">All configured sources</option>
-              <option value="brave">Brave</option>
-              <option value="internet_archive">Internet Archive</option>
-              <option value="google">Google via DataForSEO</option>
-              <option value="bing">Bing via DataForSEO</option>
-              <option value="duckduckgo">DuckDuckGo via DataForSEO</option>
-              <option value="mock">Mock</option>
-            </select>
             <button
               className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded bg-emerald-500 px-4 text-sm font-semibold text-neutral-950 hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-60"
               disabled={loading}
             >
-              {loading ? <Loader2 className="animate-spin" size={18} /> : <Sparkles size={18} />}
-              Find 500 + download all
+              {loading ? <Loader2 className="animate-spin" size={18} /> : <LinkIcon size={18} />}
+              Add links + download
             </button>
             {message ? <p className="mt-3 text-sm text-neutral-400">{message}</p> : null}
           </form>
 
           <section className="rounded border border-neutral-800 bg-neutral-900 p-4">
             <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-neutral-200">Recent runs</h2>
+              <h2 className="text-sm font-semibold text-neutral-200">Link queue</h2>
               <button onClick={refresh} className="rounded p-2 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100" title="Refresh">
                 <RefreshCw size={16} />
               </button>
             </div>
             <div className="space-y-3">
-              {runs.map((run) => (
-                <div key={run.id} className="border-t border-neutral-800 pt-3 first:border-t-0 first:pt-0">
+              {documents.slice(0, 8).map((document) => (
+                <button
+                  key={document.id}
+                  type="button"
+                  onClick={() => toggleSelected(document, !selectedIds.has(document.id))}
+                  className="block w-full border-t border-neutral-800 pt-3 text-left first:border-t-0 first:pt-0"
+                >
                   <div className="flex items-center justify-between gap-3">
-                    <p className="line-clamp-1 text-sm text-neutral-200">{run.query}</p>
-                    <Status value={run.status} />
+                    <p className="line-clamp-1 text-sm text-neutral-200">{document.title}</p>
+                    <Status value={document.status} />
                   </div>
-                  <p className="mt-1 text-xs text-neutral-500">
-                    {run.provider} - {run.result_count} new
-                  </p>
-                </div>
+                  <p className="mt-1 text-xs text-neutral-500">{document.provider}</p>
+                </button>
               ))}
-              {runs.length === 0 ? <p className="text-sm text-neutral-500">No discovery runs yet.</p> : null}
+              {documents.length === 0 ? <p className="text-sm text-neutral-500">No links added yet.</p> : null}
             </div>
           </section>
         </aside>
@@ -225,7 +223,7 @@ export function HunterDashboard() {
           <div className="flex flex-col gap-4 border-b border-neutral-800 p-4 md:flex-row md:items-center md:justify-between">
             <div>
               <h2 className="text-base font-semibold">Document queue</h2>
-              <p className="text-sm text-neutral-500">Discovered decks move through download, extraction, and enrichment.</p>
+              <p className="text-sm text-neutral-500">Added links move through download, extraction, and enrichment.</p>
             </div>
             <div className="flex items-center gap-3">
               <button
@@ -245,6 +243,13 @@ export function HunterDashboard() {
               <article key={document.id} className="grid gap-4 p-4 md:grid-cols-[1fr_auto]">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(document.id)}
+                      onChange={(event) => toggleSelected(document, event.target.checked)}
+                      className="h-4 w-4 accent-emerald-500"
+                      aria-label={`Select ${document.title}`}
+                    />
                     <h3 className="font-medium text-neutral-100">{document.title}</h3>
                     <span className="rounded bg-neutral-800 px-2 py-1 text-xs uppercase text-neutral-400">{document.file_type}</span>
                     <Status value={document.status} />
@@ -272,7 +277,7 @@ export function HunterDashboard() {
                 </div>
               </article>
             ))}
-            {documents.length === 0 ? <p className="p-6 text-sm text-neutral-500">No decks discovered yet.</p> : null}
+            {documents.length === 0 ? <p className="p-6 text-sm text-neutral-500">No links added yet.</p> : null}
           </div>
         </section>
       </div>
@@ -297,6 +302,28 @@ function Status({ value }: { value: string }) {
         ? "bg-red-500/15 text-red-300"
         : "bg-amber-500/15 text-amber-300";
   return <span className={`rounded px-2 py-1 text-xs ${className}`}>{value.replace("_", " ")}</span>;
+}
+
+function parseLinks(text: string) {
+  return Array.from(
+    new Set(
+      text
+        .split(/[\s,]+/)
+        .map((part) => part.trim())
+        .filter(Boolean),
+    ),
+  );
+}
+
+function formatManualLinksMessage(result: ManualLinksResult) {
+  const parts = [
+    `${result.queued} queued`,
+    `${result.created} new`,
+    `${result.existing} duplicates`,
+    `${result.skipped} already active`,
+  ];
+  if (result.invalid.length > 0) parts.push(`${result.invalid.length} invalid`);
+  return parts.join(" - ");
 }
 
 function wait(ms: number) {

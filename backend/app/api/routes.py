@@ -1,6 +1,7 @@
 from datetime import datetime
 from pathlib import Path
 from re import sub
+from urllib.parse import unquote, urlparse
 from zipfile import ZIP_STORED, ZipFile
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -17,6 +18,8 @@ from app.schemas.documents import (
     DocumentDetail,
     DocumentRead,
     ManualDocumentCreate,
+    ManualLinksCreate,
+    ManualLinksRead,
     SearchRunCreate,
     SearchRunRead,
 )
@@ -87,6 +90,72 @@ def create_manual_document(payload: ManualDocumentCreate, db: Session = Depends(
     db.commit()
     db.refresh(document)
     return document
+
+
+@router.post("/documents/manual-links", response_model=ManualLinksRead)
+def create_manual_links(payload: ManualLinksCreate, db: Session = Depends(get_db)) -> ManualLinksRead:
+    created = 0
+    existing_count = 0
+    queued = 0
+    skipped = 0
+    invalid: list[str] = []
+    documents_to_queue: list[str] = []
+    seen_urls: set[str] = set()
+
+    for raw_url in payload.urls:
+        url = raw_url.strip()
+        if not url or url in seen_urls:
+            continue
+        seen_urls.add(url)
+
+        parsed = urlparse(url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            invalid.append(url)
+            continue
+
+        file_type = detect_file_type(url)
+        if file_type not in {"ppt", "pptx"}:
+            invalid.append(url)
+            continue
+
+        canonical_url = canonicalize_url(url)
+        existing = db.scalar(select(Document).where(Document.canonical_url == canonical_url))
+        if existing:
+            existing_count += 1
+            if existing.status in {"discovered", "download_failed"}:
+                existing.status = "download_queued"
+                documents_to_queue.append(existing.id)
+                queued += 1
+            else:
+                skipped += 1
+            continue
+
+        document = Document(
+            title=title_from_url(url),
+            source_url=url,
+            canonical_url=canonical_url,
+            provider="manual",
+            file_type=file_type,
+            status="download_queued",
+        )
+        db.add(document)
+        db.flush()
+        documents_to_queue.append(document.id)
+        created += 1
+        queued += 1
+
+    db.commit()
+
+    for document_id in documents_to_queue:
+        download_document.delay(document_id)
+
+    return ManualLinksRead(
+        created=created,
+        existing=existing_count,
+        queued=queued,
+        skipped=skipped,
+        invalid=invalid,
+    )
 
 
 @router.get("/documents/{document_id}", response_model=DocumentDetail)
@@ -197,3 +266,9 @@ def safe_archive_name(title: str, document_id: str, file_type: str, used_names: 
         counter += 1
     used_names.add(archive_name)
     return archive_name
+
+
+def title_from_url(url: str) -> str:
+    path_name = unquote(Path(urlparse(url).path).name)
+    clean_name = sub(r"\.(pptx?|PPTX?)$", "", path_name).replace("_", " ").replace("-", " ").strip()
+    return clean_name[:500] or "Untitled presentation"
