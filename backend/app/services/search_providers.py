@@ -168,7 +168,8 @@ class InternetArchiveProvider:
         search_query = f'({query}) AND (format:"Microsoft PowerPoint" OR format:"Microsoft Powerpoint" OR format:"PowerPoint")'
         next_page = max(start_page, 1)
 
-        with httpx.Client(timeout=30) as client:
+        timeout = httpx.Timeout(60, connect=15)
+        with httpx.Client(timeout=timeout) as client:
             for page in range(next_page, next_page + max_pages):
                 response = client.get(
                     "https://archive.org/advancedsearch.php",
@@ -190,9 +191,12 @@ class InternetArchiveProvider:
                     if not identifier:
                         continue
 
-                    metadata_response = client.get(f"https://archive.org/metadata/{quote(identifier)}")
-                    metadata_response.raise_for_status()
-                    files = metadata_response.json().get("files", [])
+                    try:
+                        metadata_response = client.get(f"https://archive.org/metadata/{quote(identifier)}")
+                        metadata_response.raise_for_status()
+                        files = metadata_response.json().get("files", [])
+                    except httpx.HTTPError:
+                        continue
 
                     for file_info in files:
                         file_name = file_info.get("name")

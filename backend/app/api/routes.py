@@ -150,7 +150,7 @@ def create_manual_links(payload: ManualLinksCreate, db: Session = Depends(get_db
     discovery_runs = 0
     invalid: list[str] = []
     documents_to_queue: list[str] = []
-    archive_collection_run_ids: list[str] = []
+    archive_collection_run_ids: list[tuple[str, int]] = []
     link_crawl_run_ids: list[tuple[str, str]] = []
     seen_inputs: set[str] = set()
     seen_candidates: set[str] = set()
@@ -172,6 +172,7 @@ def create_manual_links(payload: ManualLinksCreate, db: Session = Depends(get_db
                     SearchRun.provider == "internet_archive",
                     SearchRun.query == "presentation",
                     SearchRun.status.in_(["queued", "running"]),
+                    SearchRun.created_at >= datetime.utcnow() - timedelta(hours=2),
                 )
             )
             if existing_run:
@@ -180,7 +181,7 @@ def create_manual_links(payload: ManualLinksCreate, db: Session = Depends(get_db
                 run = SearchRun(query="presentation", provider="internet_archive", status="queued")
                 db.add(run)
                 db.flush()
-                archive_collection_run_ids.append(run.id)
+                archive_collection_run_ids.append((run.id, estimate_archive_start_page(db)))
                 discovery_runs += 1
             continue
 
@@ -190,6 +191,7 @@ def create_manual_links(payload: ManualLinksCreate, db: Session = Depends(get_db
                     SearchRun.provider == "link_crawl",
                     SearchRun.query == url,
                     SearchRun.status.in_(["queued", "running"]),
+                    SearchRun.created_at >= datetime.utcnow() - timedelta(hours=2),
                 )
             )
             if existing_run:
@@ -252,8 +254,8 @@ def create_manual_links(payload: ManualLinksCreate, db: Session = Depends(get_db
 
     db.commit()
 
-    for run_id in archive_collection_run_ids:
-        collect_archive_batches.delay(run_id, "presentation", 1, 0)
+    for run_id, start_page in archive_collection_run_ids:
+        collect_archive_batches.delay(run_id, "presentation", start_page, 0)
 
     for run_id, seed_url in link_crawl_run_ids:
         crawl_link_source.delay(run_id, seed_url)
@@ -546,6 +548,11 @@ def is_broad_archive_url(url: str) -> bool:
         return False
     path = parsed.path.strip("/")
     return path == "" or path in {"details", "download"}
+
+
+def estimate_archive_start_page(db: Session) -> int:
+    existing_count = db.scalar(select(func.count()).select_from(Document).where(Document.provider == "internet_archive")) or 0
+    return max((existing_count // 100) + 1, 1)
 
 
 def discover_archive_presentation_urls(url: str, limit: int = 500) -> list[str]:
