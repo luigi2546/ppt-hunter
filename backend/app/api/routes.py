@@ -30,7 +30,7 @@ from app.schemas.documents import (
     SearchRunCreate,
     SearchRunRead,
 )
-from app.services.public_portal import export_public_portal as publish_public_portal
+from app.services.public_portal import build_manifest, export_public_portal as publish_public_portal
 from app.services.storage import ensure_local_file, is_remote_storage_enabled, upload_export_file, upload_file
 from app.services.urls import canonicalize_url, detect_file_type
 from app.tasks.jobs import discover_presentations, download_document
@@ -72,6 +72,17 @@ def list_documents(
         like = f"%{q}%"
         stmt = stmt.where((Document.title.ilike(like)) | (Document.extracted_text.ilike(like)))
     return list(db.scalars(stmt))
+
+
+@router.get("/portal/manifest")
+def portal_manifest(db: Session = Depends(get_db)) -> dict[str, object]:
+    documents = list(db.scalars(select(Document).order_by(desc(Document.updated_at))))
+    return build_manifest(
+        documents,
+        "/api/exports/metadata.csv",
+        "/api/exports/metadata.json",
+        download_url_for=lambda document: f"/api/documents/{document.id}/file",
+    )
 
 
 @router.get("/documents/stats", response_model=DocumentStatsRead)
@@ -213,6 +224,23 @@ def create_manual_links(payload: ManualLinksCreate, db: Session = Depends(get_db
     )
 
 
+@router.get("/documents/{document_id}/file")
+def download_document_file(document_id: str, db: Session = Depends(get_db)) -> FileResponse:
+    document = db.get(Document, document_id)
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    local_path = ensure_local_file(document.id, document.file_type, document.file_path, document.storage_key)
+    if not local_path:
+        raise HTTPException(status_code=404, detail="Downloaded file is not available")
+
+    return FileResponse(
+        local_path,
+        media_type=content_type_for_file_type(document.file_type),
+        filename=safe_archive_name(document.title, document.id, document.file_type, set()),
+    )
+
+
 @router.get("/documents/{document_id}", response_model=DocumentDetail)
 def get_document(document_id: str, db: Session = Depends(get_db)) -> Document:
     document = db.get(Document, document_id)
@@ -319,6 +347,20 @@ def export_metadata(db: Session = Depends(get_db)) -> MetadataExportRead:
         csv_key=csv_key,
         json_key=json_key,
     )
+
+
+@router.get("/exports/metadata.csv")
+def download_metadata_csv(db: Session = Depends(get_db)) -> FileResponse:
+    documents = list(db.scalars(select(Document).order_by(desc(Document.updated_at))))
+    write_metadata_export(documents)
+    return FileResponse(settings.storage_dir / "metadata" / "documents.csv", media_type="text/csv", filename="documents.csv")
+
+
+@router.get("/exports/metadata.json")
+def download_metadata_json(db: Session = Depends(get_db)) -> FileResponse:
+    documents = list(db.scalars(select(Document).order_by(desc(Document.updated_at))))
+    write_metadata_export(documents)
+    return FileResponse(settings.storage_dir / "metadata" / "documents.json", media_type="application/json", filename="documents.json")
 
 
 @router.post("/exports/portal", response_model=PublicPortalExportRead)
@@ -571,6 +613,14 @@ def safe_archive_name(title: str, document_id: str, file_type: str, used_names: 
         counter += 1
     used_names.add(archive_name)
     return archive_name
+
+
+def content_type_for_file_type(file_type: str) -> str:
+    if file_type == "pptx":
+        return "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    if file_type == "ppt":
+        return "application/vnd.ms-powerpoint"
+    return "application/octet-stream"
 
 
 def title_from_url(url: str) -> str:

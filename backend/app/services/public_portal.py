@@ -2,6 +2,7 @@ import json
 from collections import defaultdict
 from datetime import datetime
 from html import escape
+from typing import Callable
 
 from app.core.config import settings
 from app.models.document import Document
@@ -30,25 +31,31 @@ def export_public_portal(documents: list[Document], csv_key: str, json_key: str)
     return PORTAL_INDEX_KEY, PORTAL_MANIFEST_KEY
 
 
-def build_manifest(documents: list[Document], csv_key: str, json_key: str) -> dict[str, object]:
+def build_manifest(
+    documents: list[Document],
+    csv_key: str,
+    json_key: str,
+    download_url_for: Callable[[Document], str] | None = None,
+) -> dict[str, object]:
     files_by_day: dict[str, list[dict[str, object]]] = defaultdict(list)
     total_size = 0
 
     for document in documents:
-        if not document.storage_key:
+        if not document.storage_key and (download_url_for is None or not document.file_path):
             continue
         if document.status not in {"downloaded", "ready"} and document.size_bytes is None:
             continue
 
         day = (document.updated_at or document.created_at or datetime.utcnow()).strftime("%Y-%m-%d")
         size_bytes = document.size_bytes or 0
+        storage_key = document.storage_key or f"documents/{document.id}.{document.file_type}"
         total_size += size_bytes
         files_by_day[day].append(
             {
                 "id": document.id,
                 "title": document.title,
-                "key": document.storage_key,
-                "download_url": object_url(document.storage_key),
+                "key": storage_key,
+                "download_url": download_url_for(document) if download_url_for else object_url(storage_key),
                 "source_url": document.source_url,
                 "file_type": document.file_type,
                 "size": size_bytes,
@@ -92,6 +99,8 @@ def build_manifest(documents: list[Document], csv_key: str, json_key: str) -> di
 
 
 def object_url(key: str) -> str:
+    if key.startswith("/"):
+        return key
     clean_key = key.lstrip("/")
     if settings.public_archive_base_url:
         return f"{settings.public_archive_base_url.rstrip('/')}/{clean_key}"
