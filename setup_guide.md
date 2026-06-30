@@ -205,3 +205,40 @@ AWS_SECRET_ACCESS_KEY=<server-only-secret>
 ```
 
 PPT Hunter stores original decks under `raw/` and generated ZIP exports under `exports/`.
+
+## Public Archive Page
+
+PPT Hunter can also generate a static public archive page like:
+
+```text
+index.html
+portal_manifest.json
+metadata/documents.csv
+metadata/documents.json
+raw/<document-id>.pptx
+```
+
+Set these optional values in `.env`:
+
+```env
+PUBLIC_ARCHIVE_TITLE=Research Document Archive
+PUBLIC_ARCHIVE_BASE_URL=https://your-cloudfront-domain.example.com
+PUBLIC_ARCHIVE_TARGET_FILES=200000
+```
+
+Then publish the page from the frontend with **Publish page**, or run:
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/exports/portal
+```
+
+If you serve the bucket through CloudFront, point CloudFront's default root object to `index.html`. The page reads `portal_manifest.json`, shows collection totals, lists daily files, and links to the metadata CSV/JSON.
+
+For public downloads, CloudFront or the bucket policy must allow read access to:
+
+```text
+index.html
+portal_manifest.json
+metadata/*
+raw/*
+```

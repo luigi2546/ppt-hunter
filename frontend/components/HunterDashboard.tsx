@@ -1,6 +1,6 @@
 "use client";
 
-import { Download, FileSearch, Link as LinkIcon, Loader2, RefreshCw, ShieldCheck } from "lucide-react";
+import { Download, FileSearch, Globe2, Link as LinkIcon, Loader2, RefreshCw, ShieldCheck } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
 type DocumentItem = {
@@ -39,6 +39,14 @@ type DocumentStats = {
   by_status: Record<string, number>;
 };
 
+type PublicPortalResult = {
+  document_count: number;
+  index_key: string;
+  manifest_key: string;
+  csv_key: string;
+  json_key: string;
+};
+
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
 
 export function HunterDashboard() {
@@ -47,6 +55,7 @@ export function HunterDashboard() {
   const [stats, setStats] = useState<DocumentStats | null>(null);
   const [loading, setLoading] = useState(false);
   const [bulkLoading, setBulkLoading] = useState(false);
+  const [portalLoading, setPortalLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
@@ -169,6 +178,21 @@ export function HunterDashboard() {
     }
   }
 
+  async function publishPublicPortal() {
+    setPortalLoading(true);
+    setMessage(null);
+    try {
+      const response = await fetch(`${API_BASE}/api/exports/portal`, { method: "POST" });
+      if (!response.ok) throw new Error(await response.text());
+      const result = (await response.json()) as PublicPortalResult;
+      setMessage(`Public archive published: ${result.index_key}, ${result.manifest_key}, metadata CSV/JSON. ${result.document_count} records included.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to publish public archive.");
+    } finally {
+      setPortalLoading(false);
+    }
+  }
+
   return (
     <main className="min-h-screen bg-neutral-950 text-neutral-100">
       <section className="border-b border-neutral-800 bg-neutral-900">
@@ -256,6 +280,14 @@ export function HunterDashboard() {
               >
                 {bulkLoading ? <Loader2 className="animate-spin" size={16} /> : <Download size={16} />}
                 Queue all + ZIP ({downloadableCount || activeDownloadCount || exportableCount})
+              </button>
+              <button
+                onClick={publishPublicPortal}
+                className="flex items-center gap-2 rounded border border-neutral-700 px-3 py-2 text-sm font-medium text-neutral-200 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={portalLoading || exportableCount === 0}
+              >
+                {portalLoading ? <Loader2 className="animate-spin" size={16} /> : <Globe2 size={16} />}
+                Publish page
               </button>
               <ShieldCheck className="text-emerald-400" size={22} />
             </div>

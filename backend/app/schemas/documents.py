@@ -93,3 +93,11 @@ class MetadataExportRead(BaseModel):
     document_count: int
     csv_key: str
     json_key: str
+
+
+class PublicPortalExportRead(BaseModel):
+    document_count: int
+    index_key: str
+    manifest_key: str
+    csv_key: str
+    json_key: str

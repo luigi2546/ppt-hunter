@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     aws_s3_bucket: str | None = None
     aws_region: str = "eu-north-1"
     aws_s3_endpoint_url: str | None = None
+    public_archive_title: str = "Research Document Archive"
+    public_archive_base_url: str | None = None
+    public_archive_target_files: int = 200000
 
     brave_search_api_key: str | None = None
     dataforseo_login: str | None = None

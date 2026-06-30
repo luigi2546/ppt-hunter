@@ -26,9 +26,11 @@ from app.schemas.documents import (
     ManualLinksCreate,
     ManualLinksRead,
     MetadataExportRead,
+    PublicPortalExportRead,
     SearchRunCreate,
     SearchRunRead,
 )
+from app.services.public_portal import export_public_portal as publish_public_portal
 from app.services.storage import ensure_local_file, is_remote_storage_enabled, upload_export_file, upload_file
 from app.services.urls import canonicalize_url, detect_file_type
 from app.tasks.jobs import discover_presentations, download_document
@@ -310,6 +312,31 @@ def export_downloaded_documents(
 @router.post("/exports/metadata", response_model=MetadataExportRead)
 def export_metadata(db: Session = Depends(get_db)) -> MetadataExportRead:
     documents = list(db.scalars(select(Document).order_by(desc(Document.updated_at))))
+    csv_key, json_key = write_metadata_export(documents)
+
+    return MetadataExportRead(
+        document_count=len(documents),
+        csv_key=csv_key,
+        json_key=json_key,
+    )
+
+
+@router.post("/exports/portal", response_model=PublicPortalExportRead)
+def export_portal(db: Session = Depends(get_db)) -> PublicPortalExportRead:
+    documents = list(db.scalars(select(Document).order_by(desc(Document.updated_at))))
+    csv_key, json_key = write_metadata_export(documents)
+    index_key, manifest_key = publish_public_portal(documents, csv_key, json_key)
+
+    return PublicPortalExportRead(
+        document_count=len(documents),
+        index_key=index_key,
+        manifest_key=manifest_key,
+        csv_key=csv_key,
+        json_key=json_key,
+    )
+
+
+def write_metadata_export(documents: list[Document]) -> tuple[str, str]:
     rows = [metadata_row(document) for document in documents]
 
     metadata_dir = settings.storage_dir / "metadata"
@@ -331,11 +358,7 @@ def export_metadata(db: Session = Depends(get_db)) -> MetadataExportRead:
         upload_file(csv_path, csv_key, "text/csv")
         upload_file(json_path, json_key, "application/json")
 
-    return MetadataExportRead(
-        document_count=len(documents),
-        csv_key=csv_key,
-        json_key=json_key,
-    )
+    return csv_key, json_key
 
 
 class PresentationLinkParser(HTMLParser):
