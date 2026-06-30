@@ -30,7 +30,7 @@ from app.schemas.documents import (
     SearchRunCreate,
     SearchRunRead,
 )
-from app.services.public_portal import build_manifest, export_public_portal as publish_public_portal
+from app.services.public_portal import PUBLIC_FILE_STATUSES, build_manifest, export_public_portal as publish_public_portal
 from app.services.storage import ensure_local_file, is_remote_storage_enabled, upload_export_file, upload_file
 from app.services.urls import canonicalize_url, detect_file_type
 from app.tasks.jobs import collect_archive_batches, discover_presentations, download_document
@@ -245,6 +245,8 @@ def download_document_file(document_id: str, db: Session = Depends(get_db)) -> F
     document = db.get(Document, document_id)
     if not document:
         raise HTTPException(status_code=404, detail="Document not found")
+    if document.status not in PUBLIC_FILE_STATUSES:
+        raise HTTPException(status_code=404, detail="Downloaded file is not available")
 
     local_path = ensure_local_file(document.id, document.file_type, document.file_path, document.storage_key)
     if not local_path:
@@ -270,6 +272,8 @@ def queue_download(document_id: str, db: Session = Depends(get_db)) -> Document:
     document = db.get(Document, document_id)
     if not document:
         raise HTTPException(status_code=404, detail="Document not found")
+    if document.status == "duplicate":
+        raise HTTPException(status_code=409, detail="Duplicate files are not re-queued")
     document.status = "download_queued"
     db.commit()
     db.refresh(document)
@@ -318,6 +322,7 @@ def export_downloaded_documents(
     stmt = (
         select(Document)
         .where(or_(Document.file_path.is_not(None), Document.storage_key.is_not(None)))
+        .where(Document.status.in_(PUBLIC_FILE_STATUSES))
         .order_by(desc(Document.updated_at))
         .limit(limit)
     )
@@ -408,11 +413,18 @@ def write_metadata_export(documents: list[Document]) -> tuple[str, str]:
 def build_documents_zip(documents: list[Document], day: str | None = None) -> Path:
     selected_documents = []
     local_paths: dict[str, Path] = {}
+    seen_hashes: set[str] = set()
     for document in documents:
+        if document.status not in PUBLIC_FILE_STATUSES:
+            continue
+        if document.sha256 and document.sha256 in seen_hashes:
+            continue
         local_path = ensure_local_file(document.id, document.file_type, document.file_path, document.storage_key)
         if local_path:
             selected_documents.append(document)
             local_paths[document.id] = local_path
+            if document.sha256:
+                seen_hashes.add(document.sha256)
     if not selected_documents:
         raise HTTPException(status_code=404, detail="No downloaded files are available to export")
 

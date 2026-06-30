@@ -171,10 +171,16 @@ def download_document(document_id: str) -> None:
             path, sha256, size = download_to_storage(document.id, document.source_url, document.file_type)
             duplicate = db.scalar(select(Document).where(Document.sha256 == sha256, Document.id != document.id))
             if duplicate:
+                try:
+                    path.unlink(missing_ok=True)
+                except OSError:
+                    pass
                 document.status = "duplicate"
                 document.sha256 = sha256
                 document.size_bytes = size
-                document.file_path = str(path)
+                document.file_path = None
+                document.storage_key = duplicate.storage_key
+                document.error = f"Duplicate of document {duplicate.id}"
                 db.commit()
                 return
 

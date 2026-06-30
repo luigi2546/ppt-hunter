@@ -11,6 +11,7 @@ from app.services.storage import is_remote_storage_enabled, upload_file
 
 PORTAL_INDEX_KEY = "index.html"
 PORTAL_MANIFEST_KEY = "portal_manifest.json"
+PUBLIC_FILE_STATUSES = {"downloaded", "extracting", "extracted", "enriching", "ready"}
 
 
 def export_public_portal(documents: list[Document], csv_key: str, json_key: str) -> tuple[str, str]:
@@ -41,16 +42,27 @@ def build_manifest(
 ) -> dict[str, object]:
     files_by_day: dict[str, list[dict[str, object]]] = defaultdict(list)
     total_size = 0
+    seen_hashes: set[str] = set()
+    seen_keys: set[str] = set()
 
     for document in documents:
+        if document.status not in PUBLIC_FILE_STATUSES:
+            continue
+        if document.sha256 and document.sha256 in seen_hashes:
+            continue
         if not document.storage_key and (download_url_for is None or not document.file_path):
             continue
-        if document.status not in {"downloaded", "ready"} and document.size_bytes is None:
+        if document.size_bytes is None:
             continue
 
         day = (document.updated_at or document.created_at or datetime.utcnow()).strftime("%Y-%m-%d")
         size_bytes = document.size_bytes or 0
         storage_key = document.storage_key or f"documents/{document.id}.{document.file_type}"
+        if storage_key in seen_keys:
+            continue
+        if document.sha256:
+            seen_hashes.add(document.sha256)
+        seen_keys.add(storage_key)
         total_size += size_bytes
         files_by_day[day].append(
             {
