@@ -40,6 +40,7 @@ class Document(Base):
     sha256: Mapped[str | None] = mapped_column(String(64), index=True)
     size_bytes: Mapped[int | None] = mapped_column(Integer)
     slide_count: Mapped[int | None] = mapped_column(Integer)
+    image_count: Mapped[int | None] = mapped_column(Integer)
     language: Mapped[str | None] = mapped_column(String(20))
     category: Mapped[str | None] = mapped_column(String(100))
     confidence: Mapped[float | None] = mapped_column(Float)

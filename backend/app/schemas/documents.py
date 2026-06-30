@@ -34,6 +34,7 @@ class DocumentRead(BaseModel):
     sha256: str | None
     size_bytes: int | None
     slide_count: int | None
+    image_count: int | None
     language: str | None
     category: str | None
     confidence: float | None

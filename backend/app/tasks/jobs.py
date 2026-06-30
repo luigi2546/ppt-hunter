@@ -6,9 +6,10 @@ from sqlalchemy import func, select
 from app.core.config import settings
 from app.db.session import SessionLocal
 from app.models.document import Document, SearchRun
+from app.services.content_filters import contains_chinese_signal, is_allowed_candidate
 from app.services.downloader import download_to_storage
 from app.services.enrichment import categorize, summarize
-from app.services.extractor import extract_document_text
+from app.services.extractor import count_pptx_images, extract_document_text
 from app.services.indexer import index_document
 from app.services.search_providers import get_provider
 from app.services.storage import ensure_local_file, upload_downloaded_file
@@ -32,11 +33,17 @@ def discover_presentations(run_id: str, query: str, provider_name: str, limit: i
             provider = get_provider(provider_name)
             results = provider.search(query, limit)
             created = 0
+            skipped = 0
             queued_document_ids: list[str] = []
             for result in results:
+                allowed, _reason = is_allowed_candidate(result.url, result.title, result.description)
+                if not allowed:
+                    skipped += 1
+                    continue
                 canonical_url = canonicalize_url(result.url)
                 existing = db.scalar(select(Document).where(Document.canonical_url == canonical_url))
                 if existing:
+                    skipped += 1
                     continue
                 document = Document(
                     search_run_id=run.id,
@@ -57,6 +64,8 @@ def discover_presentations(run_id: str, query: str, provider_name: str, limit: i
             run.provider = provider.name
             run.status = "completed"
             run.result_count = created
+            if skipped:
+                run.error = f"Skipped {skipped} blocked, Chinese, or duplicate results."
             run.completed_at = datetime.utcnow()
             db.commit()
 
@@ -106,11 +115,17 @@ def collect_archive_batches(run_id: str, query: str = "presentation", start_page
             results, next_page, exhausted = search_from_page(query, batch_size, start_page)
 
             created = 0
+            skipped = 0
             queued_document_ids: list[str] = []
             for result in results:
+                allowed, _reason = is_allowed_candidate(result.url, result.title, result.description)
+                if not allowed:
+                    skipped += 1
+                    continue
                 canonical_url = canonicalize_url(result.url)
                 existing = db.scalar(select(Document).where(Document.canonical_url == canonical_url))
                 if existing:
+                    skipped += 1
                     continue
 
                 document = Document(
@@ -134,7 +149,7 @@ def collect_archive_batches(run_id: str, query: str = "presentation", start_page
                 empty_batches += 1
             else:
                 empty_batches = 0
-            run.error = f"Last batch: page {start_page}, {created} new, next page {next_page}."
+            run.error = f"Last batch: page {start_page}, {created} new, {skipped} skipped, next page {next_page}."
             db.commit()
 
             for document_id in queued_document_ids:
@@ -169,6 +184,21 @@ def download_document(document_id: str) -> None:
 
         try:
             path, sha256, size = download_to_storage(document.id, document.source_url, document.file_type)
+            image_count = count_pptx_images(path) if document.file_type == "pptx" else None
+            document.image_count = image_count
+            if image_count is not None and image_count < settings.min_pptx_image_count:
+                try:
+                    path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+                document.status = "low_image_count"
+                document.sha256 = sha256
+                document.size_bytes = size
+                document.file_path = None
+                document.storage_key = None
+                document.error = f"Skipped: {image_count} images is below minimum {settings.min_pptx_image_count}"
+                db.commit()
+                return
             duplicate = db.scalar(select(Document).where(Document.sha256 == sha256, Document.id != document.id))
             if duplicate:
                 try:
@@ -178,6 +208,7 @@ def download_document(document_id: str) -> None:
                 document.status = "duplicate"
                 document.sha256 = sha256
                 document.size_bytes = size
+                document.image_count = image_count
                 document.file_path = None
                 document.storage_key = duplicate.storage_key
                 document.error = f"Duplicate of document {duplicate.id}"
@@ -189,6 +220,7 @@ def download_document(document_id: str) -> None:
             document.storage_key = storage_key
             document.sha256 = sha256
             document.size_bytes = size
+            document.image_count = image_count
             document.status = "downloaded"
             db.commit()
             extract_document.delay(document.id)
@@ -213,6 +245,13 @@ def extract_document(document_id: str) -> None:
                 raise ValueError("Downloaded file is not available in local cache or remote storage")
             document.file_path = str(path)
             text, slide_count = extract_document_text(Path(path), document.file_type)
+            if contains_chinese_signal(text):
+                document.extracted_text = text
+                document.slide_count = slide_count
+                document.status = "chinese_language"
+                document.error = "Skipped: Chinese-language slide text detected"
+                db.commit()
+                return
             document.extracted_text = text
             document.slide_count = slide_count
             document.status = "extracted"

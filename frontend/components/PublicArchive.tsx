@@ -12,6 +12,7 @@ type ArchiveFile = {
   file_type: string;
   size: number;
   slides: number | null;
+  images: number | null;
   category: string | null;
   summary: string | null;
   sha256: string | null;
@@ -223,7 +224,10 @@ export function PublicArchive() {
                                     <p className="mt-1 line-clamp-1 text-slate-500">{file.summary || file.source_url}</p>
                                   </td>
                                   <td className="px-3 py-3 font-semibold uppercase text-slate-600">{file.file_type}</td>
-                                  <td className="px-3 py-3 text-slate-600">{formatSize(file.size)}</td>
+                                  <td className="px-3 py-3 text-slate-600">
+                                    {formatSize(file.size)}
+                                    {file.images !== null ? <span className="ml-2 text-slate-400">{formatNumber(file.images)} images</span> : null}
+                                  </td>
                                   <td className="px-3 py-3">
                                     <a className="font-semibold text-[#0064b5] hover:text-[#004f91]" href={resolveUrl(file.download_url)}>
                                       Download

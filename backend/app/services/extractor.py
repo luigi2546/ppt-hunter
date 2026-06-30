@@ -4,6 +4,21 @@ from zipfile import ZipFile
 from pptx import Presentation
 
 
+IMAGE_EXTENSIONS = {".emf", ".gif", ".jpeg", ".jpg", ".png", ".svg", ".tif", ".tiff", ".webp", ".wmf"}
+
+
+def count_pptx_images(path: Path) -> int:
+    try:
+        with ZipFile(path) as archive:
+            return sum(
+                1
+                for name in archive.namelist()
+                if name.startswith("ppt/media/") and Path(name).suffix.lower() in IMAGE_EXTENSIONS
+            )
+    except Exception:
+        return 0
+
+
 def extract_pptx(path: Path) -> tuple[str, int]:
     try:
         deck = Presentation(str(path))
@@ -51,4 +66,3 @@ def extract_document_text(path: Path, file_type: str) -> tuple[str, int | None]:
     if file_type == "ppt":
         return "", None
     raise ValueError(f"Unsupported file type: {file_type}")
-

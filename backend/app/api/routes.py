@@ -30,6 +30,7 @@ from app.schemas.documents import (
     SearchRunCreate,
     SearchRunRead,
 )
+from app.services.content_filters import is_allowed_candidate
 from app.services.public_portal import PUBLIC_FILE_STATUSES, build_manifest, export_public_portal as publish_public_portal
 from app.services.storage import ensure_local_file, is_remote_storage_enabled, upload_export_file, upload_file
 from app.services.urls import canonicalize_url, detect_file_type
@@ -187,6 +188,13 @@ def create_manual_links(payload: ManualLinksCreate, db: Session = Depends(get_db
             continue
 
         for candidate_url in candidate_urls:
+            candidate_title = title_from_url(candidate_url)
+            allowed, reason = is_allowed_candidate(candidate_url, candidate_title)
+            if not allowed:
+                skipped += 1
+                invalid.append(f"{candidate_url} ({reason})")
+                continue
+
             canonical_url = canonicalize_url(candidate_url)
             if canonical_url in seen_candidates:
                 continue
@@ -209,7 +217,7 @@ def create_manual_links(payload: ManualLinksCreate, db: Session = Depends(get_db
                 continue
 
             document = Document(
-                title=title_from_url(candidate_url),
+                title=candidate_title,
                 source_url=candidate_url,
                 canonical_url=canonical_url,
                 provider="manual",
@@ -246,6 +254,8 @@ def download_document_file(document_id: str, db: Session = Depends(get_db)) -> F
     if not document:
         raise HTTPException(status_code=404, detail="Document not found")
     if document.status not in PUBLIC_FILE_STATUSES:
+        raise HTTPException(status_code=404, detail="Downloaded file is not available")
+    if document.image_count is not None and document.image_count < settings.min_pptx_image_count:
         raise HTTPException(status_code=404, detail="Downloaded file is not available")
 
     local_path = ensure_local_file(document.id, document.file_type, document.file_path, document.storage_key)
@@ -416,6 +426,8 @@ def build_documents_zip(documents: list[Document], day: str | None = None) -> Pa
     seen_hashes: set[str] = set()
     for document in documents:
         if document.status not in PUBLIC_FILE_STATUSES:
+            continue
+        if document.image_count is not None and document.image_count < settings.min_pptx_image_count:
             continue
         if document.sha256 and document.sha256 in seen_hashes:
             continue
@@ -607,6 +619,7 @@ def metadata_fieldnames() -> list[str]:
         "sha256",
         "size_bytes",
         "slide_count",
+        "image_count",
         "language",
         "category",
         "confidence",
@@ -630,6 +643,7 @@ def metadata_row(document: Document) -> dict[str, object]:
         "sha256": document.sha256,
         "size_bytes": document.size_bytes,
         "slide_count": document.slide_count,
+        "image_count": document.image_count,
         "language": document.language,
         "category": document.category,
         "confidence": document.confidence,

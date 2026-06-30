@@ -48,6 +48,8 @@ def build_manifest(
     for document in documents:
         if document.status not in PUBLIC_FILE_STATUSES:
             continue
+        if document.image_count is not None and document.image_count < settings.min_pptx_image_count:
+            continue
         if document.sha256 and document.sha256 in seen_hashes:
             continue
         if not document.storage_key and (download_url_for is None or not document.file_path):
@@ -74,6 +76,7 @@ def build_manifest(
                 "file_type": document.file_type,
                 "size": size_bytes,
                 "slides": document.slide_count,
+                "images": document.image_count,
                 "category": document.category,
                 "summary": document.summary,
                 "sha256": document.sha256,
