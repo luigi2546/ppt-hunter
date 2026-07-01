@@ -29,9 +29,12 @@ from app.schemas.documents import (
     PublicPortalExportRead,
     SearchRunCreate,
     SearchRunRead,
+    SourceDictionaryRunCreate,
+    SourceDictionaryRunRead,
 )
 from app.services.content_filters import is_allowed_candidate
 from app.services.public_portal import PUBLIC_FILE_STATUSES, build_manifest, export_public_portal as publish_public_portal
+from app.services.source_dictionary import ARCHIVE_QUERY_SOURCES, CRAWL_SEED_SOURCES, source_dictionary_payload
 from app.services.storage import ensure_local_file, is_remote_storage_enabled, upload_export_file, upload_file
 from app.services.urls import canonicalize_url, detect_file_type
 from app.tasks.jobs import collect_archive_batches, crawl_link_source, discover_presentations, download_document
@@ -57,6 +60,82 @@ def create_search_run(payload: SearchRunCreate, db: Session = Depends(get_db)) -
 @router.get("/search-runs", response_model=list[SearchRunRead])
 def list_search_runs(db: Session = Depends(get_db), limit: int = Query(default=20, ge=1, le=100)) -> list[SearchRun]:
     return list(db.scalars(select(SearchRun).order_by(desc(SearchRun.created_at)).limit(limit)))
+
+
+@router.get("/source-dictionary")
+def get_source_dictionary() -> dict[str, list[dict[str, str]]]:
+    return source_dictionary_payload()
+
+
+@router.post("/source-dictionary/run", response_model=SourceDictionaryRunRead)
+def run_source_dictionary(payload: SourceDictionaryRunCreate, db: Session = Depends(get_db)) -> SourceDictionaryRunRead:
+    default_archive_queries = [entry.value for entry in ARCHIVE_QUERY_SOURCES]
+    default_crawl_urls = [entry.value for entry in CRAWL_SEED_SOURCES]
+    archive_queries = (payload.archive_queries or default_archive_queries)[: payload.max_archive_queries]
+    crawl_urls = (payload.crawl_urls or default_crawl_urls)[: payload.max_crawl_urls]
+
+    archive_runs: list[tuple[str, str]] = []
+    crawl_runs: list[tuple[str, str]] = []
+    skipped = 0
+
+    for query in archive_queries:
+        query = query.strip()
+        if not query:
+            skipped += 1
+            continue
+        existing_run = db.scalar(
+            select(SearchRun).where(
+                SearchRun.provider == "internet_archive",
+                SearchRun.query == query,
+                SearchRun.status.in_(["queued", "running"]),
+                SearchRun.created_at >= datetime.utcnow() - timedelta(hours=6),
+            )
+        )
+        if existing_run:
+            skipped += 1
+            continue
+        run = SearchRun(query=query, provider="internet_archive", status="queued")
+        db.add(run)
+        db.flush()
+        archive_runs.append((run.id, query))
+
+    for url in crawl_urls:
+        url = normalize_input_url(url)
+        parsed = urlparse(url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            skipped += 1
+            continue
+        existing_run = db.scalar(
+            select(SearchRun).where(
+                SearchRun.provider == "link_crawl",
+                SearchRun.query == url,
+                SearchRun.status.in_(["queued", "running"]),
+                SearchRun.created_at >= datetime.utcnow() - timedelta(hours=6),
+            )
+        )
+        if existing_run:
+            skipped += 1
+            continue
+        run = SearchRun(query=url, provider="link_crawl", status="queued")
+        db.add(run)
+        db.flush()
+        crawl_runs.append((run.id, url))
+
+    db.commit()
+
+    for run_id, query in archive_runs:
+        collect_archive_batches.delay(run_id, query, 1, 0)
+
+    for run_id, seed_url in crawl_runs:
+        crawl_link_source.delay(run_id, seed_url)
+
+    return SourceDictionaryRunRead(
+        archive_runs_started=len(archive_runs),
+        crawl_runs_started=len(crawl_runs),
+        skipped=skipped,
+        archive_queries=[query for _, query in archive_runs],
+        crawl_urls=[url for _, url in crawl_runs],
+    )
 
 
 @router.get("/documents", response_model=list[DocumentRead])

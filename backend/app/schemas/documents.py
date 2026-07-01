@@ -80,6 +80,21 @@ class ManualLinksRead(BaseModel):
     discovery_runs: int = 0
 
 
+class SourceDictionaryRunCreate(BaseModel):
+    archive_queries: list[str] | None = Field(default=None, max_length=100)
+    crawl_urls: list[str] | None = Field(default=None, max_length=100)
+    max_archive_queries: int = Field(default=8, ge=0, le=100)
+    max_crawl_urls: int = Field(default=4, ge=0, le=100)
+
+
+class SourceDictionaryRunRead(BaseModel):
+    archive_runs_started: int
+    crawl_runs_started: int
+    skipped: int
+    archive_queries: list[str]
+    crawl_urls: list[str]
+
+
 class BulkDownloadCreate(BaseModel):
     provider: str | None = None
     limit: int = Field(default=500, ge=1, le=500)
