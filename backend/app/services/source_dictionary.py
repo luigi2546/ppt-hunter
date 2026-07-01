@@ -32,6 +32,11 @@ ARCHIVE_QUERY_SOURCES: tuple[SourceEntry, ...] = (
     SourceEntry("Data science slides", "data science lecture slides", "Technical data-science teaching slides."),
     SourceEntry("Statistics slides", "statistics lecture slides", "Statistics and analytics teaching decks."),
     SourceEntry("Software skills", "workplace software skills powerpoint", "Computer and workplace software teaching decks."),
+    SourceEntry("NIH training", "NIH training presentation", "Research and grants training slide decks."),
+    SourceEntry("WHO training", "WHO training powerpoint", "World Health Organization training decks."),
+    SourceEntry("UNICEF training", "UNICEF training presentation", "UNICEF training and evaluation slide decks."),
+    SourceEntry("World Bank training", "World Bank training presentation", "Development and public-sector training decks."),
+    SourceEntry("Clinical research", "clinical research training powerpoint", "Clinical research and monitoring training decks."),
 )
 
 
@@ -51,6 +56,14 @@ CRAWL_SEED_SOURCES: tuple[SourceEntry, ...] = (
     SourceEntry("EERE Exchange", "https://eere-exchange.energy.gov/", "Energy efficiency and renewable energy resources."),
     SourceEntry("OpenStax", "https://openstax.org/", "Open textbook pages and OER hubs."),
     SourceEntry("OpenStax OER Commons Hub", "https://oercommons.org/hubs/OpenStax", "OpenStax-aligned OER community materials."),
+    SourceEntry("NIH Grants", "https://grants.nih.gov/", "NIH grant and research training materials."),
+    SourceEntry("NIDCR", "https://www.nidcr.nih.gov/", "NIH dental and craniofacial research materials."),
+    SourceEntry("NIMH Clinical Research Toolbox", "https://www.nimh.nih.gov/funding/clinical-research/clinical-research-toolbox", "Clinical research training resources."),
+    SourceEntry("WHO", "https://www.who.int/", "World Health Organization training materials."),
+    SourceEntry("WHO TDR", "https://tdr.who.int/", "WHO/TDR research and health training materials."),
+    SourceEntry("UNICEF", "https://www.unicef.org/", "UNICEF public training and evaluation resources."),
+    SourceEntry("UNICEF MICS", "https://mics.unicef.org/", "Survey and child-development presentation materials."),
+    SourceEntry("World Bank Documents", "https://thedocs.worldbank.org/", "World Bank public training and project slide decks."),
 )
 
 

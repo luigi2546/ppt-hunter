@@ -9,8 +9,8 @@ canonical URL and SHA-256, filter Chinese-language decks, and skip low-image PPT
 Checked against `backend/app/services/content_filters.py`:
 
 ```text
-URLs checked: 55
-Allowed: 55
+URLs checked: 85
+Allowed: 85
 Blocked domains: 0
 Chinese-flagged URLs/domains: 0
 ```
@@ -51,6 +51,11 @@ nursing lecture slides
 data science lecture slides
 statistics lecture slides
 workplace software skills powerpoint
+NIH training presentation
+WHO training powerpoint
+UNICEF training presentation
+World Bank training presentation
+clinical research training powerpoint
 ```
 
 ## Crawl Seed Pages
@@ -85,6 +90,14 @@ These are broad pages/domains the crawler can visit to find PPT/PPTX links.
 | OpenStax Psychology 2e | https://openstax.org/details/books/psychology-2e | Open textbook page with instructor resources references. |
 | OpenStax Concepts of Biology | https://openstax.org/details/books/concepts-biology | Open textbook page with teaching resources references. |
 | OpenStax Medical-Surgical Nursing | https://openstax.org/books/medical-surgical-nursing/pages/preface | Mentions PowerPoint lecture slides in resources. |
+| NIH Grants | https://grants.nih.gov/ | NIH grants and training materials. |
+| NIDCR | https://www.nidcr.nih.gov/ | NIH research training resources. |
+| NIMH Clinical Research Toolbox | https://www.nimh.nih.gov/funding/clinical-research/clinical-research-toolbox | Clinical research training resources. |
+| WHO | https://www.who.int/ | Public health training materials. |
+| WHO TDR | https://tdr.who.int/ | WHO/TDR health research training materials. |
+| UNICEF | https://www.unicef.org/ | UNICEF public training and evaluation resources. |
+| UNICEF MICS | https://mics.unicef.org/ | UNICEF survey/statistical presentation materials. |
+| World Bank Documents | https://thedocs.worldbank.org/ | World Bank public training and project decks. |
 
 ## Direct PPT/PPTX Examples
 
@@ -121,6 +134,28 @@ These are confirmed direct PPT/PPTX URLs that can be added manually or used as t
 | EERE Heat Pump Sales | https://bsesc.energy.gov/sites/default/files/Heat%20Pump%20Sales%20-%20Presentation.pptx | Energy workforce sales training. |
 | EERE Impact and EJ Analysis | https://www1.eere.energy.gov/iedo/downloads/2023/peer_review/Dollinger_IEDO_Strategic-Analysis_Poster_Project-and-Portfolio-Impact-and-Environmental-Justice-Analysis.pptx | Energy analysis presentation. |
 | EERE Targeted Extraction | https://www1.eere.energy.gov/iedo/downloads/2023/peer_review/Jassby_AMMTO_Targeted%20Extraction%20of%20Valuable%20Intermediate%20Products.pptx | Energy technology presentation. |
+| NIH Training Grant Updates | https://grants.nih.gov/sites/default/files/Drop-in-slides-Training-Grant-Application-Updates_1.pptx | NIH training grant update slides. |
+| NIH Clinical Trials Changes | https://grants.nih.gov/sites/default/files/Clinical-Trials-Changes-full%20length_v5.pptx | NIH clinical trials training. |
+| NIH Grants Process Walkthrough | https://grants.nih.gov/sites/default/files/NIH%20Grants%20Process%20Walk%20Through%20Webinar%20-%20Live%20Slide%20Deck%20-%20May%2015%202024.pptx | NIH grants process webinar deck. |
+| NIDCR Clinical Research Responsibilities | https://www.nidcr.nih.gov/sites/default/files/2017-12/clinical-research-responsibilities-nidcr-Investigators.pptx | Clinical research responsibilities. |
+| NIMH Good Documentation Practices | https://www.nimh.nih.gov/sites/default/files/documents/funding/clinical-research/clinical-research-toolbox/documents/good_documentation_practices_for_nimh-sponsored_studies_v1_november_2020.pptx | Clinical research documentation training. |
+| NIMH Clinical Monitoring Overview | https://www.nimh.nih.gov/sites/default/files/documents/funding/clinical-research/clinical-research-toolbox/documents/nimh_clinical_monitoring_and_crest_overview_v1_november_2020.pptx | Clinical monitoring training. |
+| NIMH Good Clinical Practice | https://www.nimh.nih.gov/sites/default/files/documents/funding/clinical-research/clinical-research-toolbox/documents/good_clinical_practice_%28gcp%29_for_nimh-sponsored_studies_v1_november_2020.pptx | GCP training deck. |
+| WHO Verbal Autopsy Session 1 | https://cdn.who.int/media/docs/default-source/classification/other-classifications/autopsy/2022-va-instrument/supporting-slides-for-verbal-autopsy-interviewers--training/session-1_itv.pptx?sfvrsn=6d5d8f2c_1 | WHO interviewer training slides. |
+| WHO Verbal Autopsy Session 10 | https://cdn.who.int/media/docs/default-source/classification/other-classifications/autopsy/2022-va-instrument/supporting-slides-for-verbal-autopsy-interviewers--training/session-10_itv.pptx?sfvrsn=cad733fd_1 | WHO interviewer training slides. |
+| WHO Verbal Autopsy Session 11 | https://cdn.who.int/media/docs/default-source/classification/other-classifications/autopsy/2022-va-instrument/supporting-slides-for-verbal-autopsy-interviewers--training/session-11_itv.pptx?sfvrsn=dd08399_1 | WHO interviewer training slides. |
+| WHO Verbal Autopsy Session 14 | https://cdn.who.int/media/docs/default-source/classification/other-classifications/autopsy/2022-va-instrument/supporting-slides-for-verbal-autopsy-interviewers--training/session-14_itv.pptx?sfvrsn=1d78cb57_1 | WHO interviewer training slides. |
+| WHO Verbal Autopsy Session 15 | https://cdn.who.int/media/docs/default-source/classification/other-classifications/autopsy/2022-va-instrument/supporting-slides-for-verbal-autopsy-interviewers--training/session-15_itv.pptx?sfvrsn=641e4c85_1 | WHO interviewer training slides. |
+| WHO RDT Training Intro | https://terrance.who.int/mediacentre/data/ebola/Ag-RDT/1_SARS-CoV-2_RDT_Training_01_Intro_v1.0.pptx | WHO rapid diagnostic test training. |
+| WHO TDR Data Consolidation | https://tdr.who.int/docs/librariesprovider10/adsm/en/managers/2-1vii-consolidate-data-electronically.pptx?sfvrsn=4e5ea256_3 | WHO/TDR training package. |
+| UNICEF MICS Child Marriage Snapshot | https://mics.unicef.org/sites/mics/files/MICS_Statistical_Snapshot_Child_marriage_20191205.pptx | UNICEF MICS statistical presentation. |
+| UNICEF MICS Early Marriage Snapshot | https://mics.unicef.org/sites/mics/files/MICS_Statistical_Snapshot_Early_Marriage_20181119.pptx | UNICEF MICS statistical presentation. |
+| UNICEF Moldova Presentation | https://www.unicef.org/moldova/media/14706/file/Katarina%20presentation%20ECG%202024%20Unicef%20Moldova%20%281%29.pptx.pptx | UNICEF Moldova presentation. |
+| World Bank AIM-ECD Introduction | https://thedocs.worldbank.org/en/doc/a287b45096de1ac7b02fda8783491294-0200022022/related/A-1-Introduction-to-AIM-ECD.pptx | World Bank training deck. |
+| World Bank Financial Assessment Tool | https://thedocs.worldbank.org/en/doc/594651593208851523-0090022020/original/4COVID19FinancialAssessmentToolMay202020.pptx | World Bank virtual training. |
+| World Bank Public Workforce Report | https://thedocs.worldbank.org/en/doc/2fe8aafa5ea5b426a01f29cf17ff9add-0350012026/original/Global-Report-Launch-Presentation-FINAL-final.pptx | World Bank report launch presentation. |
+| World Bank Procurement Forum | https://www.worldbank.org/content/dam/Worldbank/Event/ECA/public-procurement-forum10-eca/PPA%20Achievements%202013%20ENG.pptx | World Bank procurement presentation. |
+| World Bank Procurement Complaints | https://www.worldbank.org/content/dam/Worldbank/document/SAR/pakistan/ppra-conference-2014/Daniel-Gordon-capactiy-presentation.pptx | World Bank procurement training presentation. |
 
 ## Suggested Manual Batch
 
@@ -160,4 +195,20 @@ https://www.osha.gov/sites/default/files/2022-01/Chemical%20Safety%20Training.pp
 https://www.osha.gov/sites/default/files/2022-04/Ladder%20Safety.pptx
 https://www.energy.gov/sites/prod/files/2019/09/f66/TCF%20Briefing%20Sep%2010%20IP%20Counsel.pptx
 https://bsesc.energy.gov/sites/default/files/Heat%20Pump%20Sales%20-%20Presentation.pptx
+https://grants.nih.gov/
+https://www.nimh.nih.gov/funding/clinical-research/clinical-research-toolbox
+https://www.who.int/
+https://tdr.who.int/
+https://www.unicef.org/
+https://mics.unicef.org/
+https://thedocs.worldbank.org/
+https://grants.nih.gov/sites/default/files/Drop-in-slides-Training-Grant-Application-Updates_1.pptx
+https://grants.nih.gov/sites/default/files/Clinical-Trials-Changes-full%20length_v5.pptx
+https://www.nidcr.nih.gov/sites/default/files/2017-12/clinical-research-responsibilities-nidcr-Investigators.pptx
+https://www.nimh.nih.gov/sites/default/files/documents/funding/clinical-research/clinical-research-toolbox/documents/good_documentation_practices_for_nimh-sponsored_studies_v1_november_2020.pptx
+https://cdn.who.int/media/docs/default-source/classification/other-classifications/autopsy/2022-va-instrument/supporting-slides-for-verbal-autopsy-interviewers--training/session-1_itv.pptx?sfvrsn=6d5d8f2c_1
+https://terrance.who.int/mediacentre/data/ebola/Ag-RDT/1_SARS-CoV-2_RDT_Training_01_Intro_v1.0.pptx
+https://mics.unicef.org/sites/mics/files/MICS_Statistical_Snapshot_Child_marriage_20191205.pptx
+https://thedocs.worldbank.org/en/doc/a287b45096de1ac7b02fda8783491294-0200022022/related/A-1-Introduction-to-AIM-ECD.pptx
+https://thedocs.worldbank.org/en/doc/594651593208851523-0090022020/original/4COVID19FinancialAssessmentToolMay202020.pptx
 ```
