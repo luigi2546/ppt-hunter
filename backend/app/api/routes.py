@@ -83,6 +83,10 @@ def run_source_dictionary(payload: SourceDictionaryRunCreate, db: Session = Depe
         if not query:
             skipped += 1
             continue
+        allowed, _reason = is_allowed_candidate(query, query)
+        if not allowed:
+            skipped += 1
+            continue
         existing_run = db.scalar(
             select(SearchRun).where(
                 SearchRun.provider == "internet_archive",
@@ -103,6 +107,10 @@ def run_source_dictionary(payload: SourceDictionaryRunCreate, db: Session = Depe
         url = normalize_input_url(url)
         parsed = urlparse(url)
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            skipped += 1
+            continue
+        allowed, _reason = is_allowed_candidate(url)
+        if not allowed:
             skipped += 1
             continue
         existing_run = db.scalar(

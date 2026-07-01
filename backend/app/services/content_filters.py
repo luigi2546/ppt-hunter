@@ -76,7 +76,7 @@ def is_allowed_candidate(url: str, title: str | None = None, description: str | 
     text = " ".join(part for part in [url, title or "", description or ""] if part).lower()
     if is_blocked_domain(url) or contains_blocked_domain(text):
         return False, "blocked_domain"
-    if contains_chinese_signal(text):
+    if is_chinese_domain(url) or contains_chinese_signal(text):
         return False, "chinese"
     return True, None
 
@@ -90,6 +90,11 @@ def is_blocked_domain(url: str) -> bool:
 
 def contains_blocked_domain(text: str) -> bool:
     return any(domain in text for domain in BLOCKED_DOMAINS)
+
+
+def is_chinese_domain(url: str) -> bool:
+    host = urlparse(url).netloc.lower().removeprefix("www.")
+    return host.endswith(".cn") or host.endswith(".中国") or host.endswith(".中國")
 
 
 def contains_chinese_signal(text: str) -> bool:
