@@ -134,14 +134,14 @@ export function PublicArchive() {
               <Download size={16} />
               Download All ZIP
             </a>
-            <a className="inline-flex h-10 items-center gap-2 rounded-md bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-black/5 hover:bg-slate-50" href={resolveUrl(manifest?.metadata.csv_url ?? "/api/exports/metadata.csv")}>
+            {/* <a className="inline-flex h-10 items-center gap-2 rounded-md bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-black/5 hover:bg-slate-50" href={resolveUrl(manifest?.metadata.csv_url ?? "/api/exports/metadata.csv")}>
               <Database size={16} />
               CSV
             </a>
             <a className="inline-flex h-10 items-center gap-2 rounded-md bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-black/5 hover:bg-slate-50" href={resolveUrl(manifest?.metadata.json_url ?? "/api/exports/metadata.json")}>
               <FileText size={16} />
               JSON
-            </a>
+            </a> */}
           </div>
         </div>
 
