@@ -9,8 +9,8 @@ canonical URL and SHA-256, filter Chinese-language decks, and skip low-image PPT
 Checked against `backend/app/services/content_filters.py`:
 
 ```text
-URLs checked: 33
-Allowed: 33
+URLs checked: 55
+Allowed: 55
 Blocked domains: 0
 Chinese-flagged URLs/domains: 0
 ```
@@ -43,6 +43,14 @@ professional development presentation
 teacher training powerpoint
 student workshop slides
 management training presentation
+safety training presentation
+OSHA training powerpoint
+energy training presentation
+public health lecture slides
+nursing lecture slides
+data science lecture slides
+statistics lecture slides
+workplace software skills powerpoint
 ```
 
 ## Crawl Seed Pages
@@ -69,6 +77,14 @@ These are broad pages/domains the crawler can visit to find PPT/PPTX links.
 | NASA | https://www.nasa.gov/ | Public science and education resources. |
 | EPA | https://www.epa.gov/ | Public environmental education/training resources. |
 | FEMA | https://www.fema.gov/ | Emergency-management training resources. |
+| OSHA | https://www.osha.gov/ | Workplace safety training materials. |
+| Energy.gov | https://www.energy.gov/ | Energy and workforce training resources. |
+| EERE Exchange | https://eere-exchange.energy.gov/ | Energy efficiency and renewable energy resources. |
+| OpenStax | https://openstax.org/ | Open textbook pages and OER hubs. |
+| OpenStax OER Commons Hub | https://oercommons.org/hubs/OpenStax | OpenStax-aligned OER community materials. |
+| OpenStax Psychology 2e | https://openstax.org/details/books/psychology-2e | Open textbook page with instructor resources references. |
+| OpenStax Concepts of Biology | https://openstax.org/details/books/concepts-biology | Open textbook page with teaching resources references. |
+| OpenStax Medical-Surgical Nursing | https://openstax.org/books/medical-surgical-nursing/pages/preface | Mentions PowerPoint lecture slides in resources. |
 
 ## Direct PPT/PPTX Examples
 
@@ -91,6 +107,20 @@ These are confirmed direct PPT/PPTX URLs that can be added manually or used as t
 | TCSG OER Training | https://www.tcsg.edu/wp-content/uploads/2020/10/Identifying-Open-Educational-Resources-10.14.20.pptx | Open educational resources training. |
 | Miami Ohio Copyright and OER | https://copyrightconference.lib.miamioh.edu/wp-content/uploads/2017/08/CopyrightandOER_MULCC2017_v2.pptx | OER/copyright presentation. |
 | UMass Boston Open Ed Week | https://www.umb.edu/media/umassboston/content-assets/learningdesign/Open_Education_Resources_-_Open_Week_-_Mar_8_-_rev5.pptx | Open education presentation. |
+| OSHA Train-the-Trainer | https://www.osha.gov/sites/default/files/2018-12/fy15_sh-27662-sh5_PSM_Train_the_Trainer.pptx | Safety training slide deck. |
+| OSHA Adult Learners | https://www.osha.gov/sites/default/files/2018-12/fy11_sh-22311-11_Mod5-TrainingAdultLearners.pptx | Training-adult-learners slide deck. |
+| OSHA Safety Committees | https://www.osha.gov/sites/default/files/2018-11/fy10_sh-20839-10_hs_committees_part1.pptx | Workplace safety committee training. |
+| OSHA Lockout Tagout | https://www.osha.gov/sites/default/files/2022-04/Lock%20Out%20Tag%20Out%20Hazardous%20Energy%20Control.pptx | Hazardous energy control training. |
+| OSHA Hazard Communication Refresher | https://www.osha.gov/sites/default/files/2019-04/HCS2012-GHS-Refresher.pptx | Hazard communication refresher. |
+| OSHA Orientation | https://www.osha.gov/sites/default/files/2018-12/fy11_sh-22300-11_OSHAOrientation.pptx | OSHA orientation training. |
+| OSHA Healthcare ETS Training | https://www.osha.gov/sites/default/files/COVID-19%20Healthcare%20ETS%20502%20Employee%20Training.pptx | COVID-19 healthcare ETS training. |
+| OSHA Personal Protective Equipment | https://www.osha.gov/sites/default/files/2022-04/Personal%20Protective%20Equipment%20.pptx | PPE training deck. |
+| OSHA Chemical Safety Training | https://www.osha.gov/sites/default/files/2022-01/Chemical%20Safety%20Training.pptx | Chemical safety training deck. |
+| OSHA Ladder Safety | https://www.osha.gov/sites/default/files/2022-04/Ladder%20Safety.pptx | Ladder safety training deck. |
+| Energy.gov TCF Briefing | https://www.energy.gov/sites/prod/files/2019/09/f66/TCF%20Briefing%20Sep%2010%20IP%20Counsel.pptx | Technology/commercialization briefing. |
+| EERE Heat Pump Sales | https://bsesc.energy.gov/sites/default/files/Heat%20Pump%20Sales%20-%20Presentation.pptx | Energy workforce sales training. |
+| EERE Impact and EJ Analysis | https://www1.eere.energy.gov/iedo/downloads/2023/peer_review/Dollinger_IEDO_Strategic-Analysis_Poster_Project-and-Portfolio-Impact-and-Environmental-Justice-Analysis.pptx | Energy analysis presentation. |
+| EERE Targeted Extraction | https://www1.eere.energy.gov/iedo/downloads/2023/peer_review/Jassby_AMMTO_Targeted%20Extraction%20of%20Valuable%20Intermediate%20Products.pptx | Energy technology presentation. |
 
 ## Suggested Manual Batch
 
@@ -116,4 +146,18 @@ https://smartpay.gsa.gov/files/GSA010_Use_of_Data_Analytics_for_Effective_Progra
 https://smartpay.gsa.gov/files/GSA019_Federal_Travel_and_Ethics.pptx
 https://smartpay.gsa.gov/files/GSA022_GSA_Fleet_Offerings.pptx
 https://smartpay.gsa.gov/files/GSA024_DoD_Travel_Card_Program_Update.pptx
+https://www.osha.gov/
+https://www.energy.gov/
+https://eere-exchange.energy.gov/
+https://openstax.org/
+https://oercommons.org/hubs/OpenStax
+https://www.osha.gov/sites/default/files/2018-12/fy15_sh-27662-sh5_PSM_Train_the_Trainer.pptx
+https://www.osha.gov/sites/default/files/2018-12/fy11_sh-22311-11_Mod5-TrainingAdultLearners.pptx
+https://www.osha.gov/sites/default/files/2022-04/Lock%20Out%20Tag%20Out%20Hazardous%20Energy%20Control.pptx
+https://www.osha.gov/sites/default/files/2019-04/HCS2012-GHS-Refresher.pptx
+https://www.osha.gov/sites/default/files/2022-04/Personal%20Protective%20Equipment%20.pptx
+https://www.osha.gov/sites/default/files/2022-01/Chemical%20Safety%20Training.pptx
+https://www.osha.gov/sites/default/files/2022-04/Ladder%20Safety.pptx
+https://www.energy.gov/sites/prod/files/2019/09/f66/TCF%20Briefing%20Sep%2010%20IP%20Counsel.pptx
+https://bsesc.energy.gov/sites/default/files/Heat%20Pump%20Sales%20-%20Presentation.pptx
 ```

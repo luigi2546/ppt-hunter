@@ -24,6 +24,14 @@ ARCHIVE_QUERY_SOURCES: tuple[SourceEntry, ...] = (
     SourceEntry("Marketing presentations", "marketing presentation", "Marketing, sales, and communications decks."),
     SourceEntry("Government training", "government training presentation", "Public-sector training and policy decks."),
     SourceEntry("Open education", "open educational resources powerpoint", "OER-focused slide decks."),
+    SourceEntry("Safety training", "safety training presentation", "Safety and workplace training decks."),
+    SourceEntry("OSHA training", "OSHA training powerpoint", "Occupational safety training decks."),
+    SourceEntry("Energy training", "energy training presentation", "Energy and workforce training decks."),
+    SourceEntry("Public health slides", "public health lecture slides", "Public-health and epidemiology slide decks."),
+    SourceEntry("Nursing slides", "nursing lecture slides", "Healthcare education slide decks."),
+    SourceEntry("Data science slides", "data science lecture slides", "Technical data-science teaching slides."),
+    SourceEntry("Statistics slides", "statistics lecture slides", "Statistics and analytics teaching decks."),
+    SourceEntry("Software skills", "workplace software skills powerpoint", "Computer and workplace software teaching decks."),
 )
 
 
@@ -38,6 +46,11 @@ CRAWL_SEED_SOURCES: tuple[SourceEntry, ...] = (
     SourceEntry("NASA", "https://www.nasa.gov/", "Public science and education resources."),
     SourceEntry("FEMA", "https://www.fema.gov/", "Emergency-management training resources."),
     SourceEntry("GSA SmartPay", "https://smartpay.gsa.gov/", "Government training slide materials."),
+    SourceEntry("OSHA", "https://www.osha.gov/", "Workplace safety training materials."),
+    SourceEntry("Energy.gov", "https://www.energy.gov/", "Energy and workforce training resources."),
+    SourceEntry("EERE Exchange", "https://eere-exchange.energy.gov/", "Energy efficiency and renewable energy resources."),
+    SourceEntry("OpenStax", "https://openstax.org/", "Open textbook pages and OER hubs."),
+    SourceEntry("OpenStax OER Commons Hub", "https://oercommons.org/hubs/OpenStax", "OpenStax-aligned OER community materials."),
 )
 
 
