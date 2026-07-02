@@ -468,7 +468,7 @@ def export_downloaded_documents(
 
 @router.post("/exports/metadata", response_model=MetadataExportRead)
 def export_metadata(db: Session = Depends(get_db)) -> MetadataExportRead:
-    documents = list(db.scalars(select(Document).order_by(desc(Document.updated_at))))
+    documents = public_metadata_documents(db)
     csv_key, json_key = write_metadata_export(documents)
 
     return MetadataExportRead(
@@ -480,21 +480,21 @@ def export_metadata(db: Session = Depends(get_db)) -> MetadataExportRead:
 
 @router.get("/exports/metadata.csv")
 def download_metadata_csv(db: Session = Depends(get_db)) -> FileResponse:
-    documents = list(db.scalars(select(Document).order_by(desc(Document.updated_at))))
+    documents = public_metadata_documents(db)
     write_metadata_export(documents)
     return FileResponse(settings.storage_dir / "metadata" / "documents.csv", media_type="text/csv", filename="documents.csv")
 
 
 @router.get("/exports/metadata.json")
 def download_metadata_json(db: Session = Depends(get_db)) -> FileResponse:
-    documents = list(db.scalars(select(Document).order_by(desc(Document.updated_at))))
+    documents = public_metadata_documents(db)
     write_metadata_export(documents)
     return FileResponse(settings.storage_dir / "metadata" / "documents.json", media_type="application/json", filename="documents.json")
 
 
 @router.post("/exports/portal", response_model=PublicPortalExportRead)
 def export_portal(db: Session = Depends(get_db)) -> PublicPortalExportRead:
-    documents = list(db.scalars(select(Document).order_by(desc(Document.updated_at))))
+    documents = public_metadata_documents(db)
     csv_key, json_key = write_metadata_export(documents)
     index_key, manifest_key = publish_public_portal(documents, csv_key, json_key)
 
@@ -505,6 +505,35 @@ def export_portal(db: Session = Depends(get_db)) -> PublicPortalExportRead:
         csv_key=csv_key,
         json_key=json_key,
     )
+
+
+def public_metadata_documents(db: Session) -> list[Document]:
+    documents = list(
+        db.scalars(
+            select(Document)
+            .where(Document.status.in_(PUBLIC_FILE_STATUSES))
+            .where(or_(Document.storage_key.is_not(None), Document.file_path.is_not(None)))
+            .where(Document.size_bytes.is_not(None))
+            .order_by(desc(Document.updated_at))
+        )
+    )
+
+    filtered: list[Document] = []
+    seen_hashes: set[str] = set()
+    seen_keys: set[str] = set()
+    for document in documents:
+        if document.image_count is not None and document.image_count < settings.min_pptx_image_count:
+            continue
+        if document.sha256 and document.sha256 in seen_hashes:
+            continue
+        storage_key = document.storage_key or f"documents/{document.id}.{document.file_type}"
+        if storage_key in seen_keys:
+            continue
+        if document.sha256:
+            seen_hashes.add(document.sha256)
+        seen_keys.add(storage_key)
+        filtered.append(document)
+    return filtered
 
 
 def write_metadata_export(documents: list[Document]) -> tuple[str, str]:

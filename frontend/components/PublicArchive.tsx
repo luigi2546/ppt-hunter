@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, ChevronUp, Download, FileArchive, Folder, Search } from "lucide-react";
+import { ChevronDown, ChevronUp, Database, Download, FileArchive, Folder, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 type ArchiveFile = {
@@ -36,6 +36,9 @@ type ArchiveManifest = {
   total_files: number;
   total_size: number;
   zip_url: string | null;
+  metadata: {
+    csv_url: string;
+  };
   days: ArchiveDay[];
 };
 
@@ -129,6 +132,10 @@ export function PublicArchive() {
             <a className="inline-flex h-10 items-center gap-2 rounded-md bg-[#0075d4] px-3 text-sm font-semibold text-white hover:bg-[#0064b5]" href={resolveUrl(manifest?.zip_url ?? "/api/exports/documents.zip?limit=5000")}>
               <Download size={16} />
               Download All ZIP
+            </a>
+            <a className="inline-flex h-10 items-center gap-2 rounded-md bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-black/5 hover:bg-slate-50" href={resolveUrl(manifest?.metadata.csv_url ?? "/api/exports/metadata.csv")}>
+              <Database size={16} />
+              CSV
             </a>
           </div>
         </div>
